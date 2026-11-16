@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reintro</title>
+<meta name="description" content="Food reintroduction diary">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Reintro">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f6f7f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121614" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+:root{
+  --bg:#f6f7f5; --card:#ffffff; --ink:#1d2421; --muted:#68736d; --line:#e2e6e3;
+  --chip:#eef1ef; --accent:#2f7d62; --accent-ink:#ffffff; --accent-soft:#e2f0e9;
+  --ok:#3b9a6b; --ok-soft:#d9efe3; --warn:#c98a1c; --warn-soft:#f7ead0;
+  --bad:#cc5146; --bad-soft:#f6dcd8; --none:#d3d8d5; --shadow:0 1px 2px rgba(0,0,0,.04);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#121614; --card:#1b201e; --ink:#e5eae7; --muted:#97a29c; --line:#2c3330;
+    --chip:#252c29; --accent:#5cc49a; --accent-ink:#0b1712; --accent-soft:#1e3329;
+    --ok:#5cc49a; --ok-soft:#1d3a2c; --warn:#e2b04f; --warn-soft:#3d321b;
+    --bad:#ec7b70; --bad-soft:#442523; --none:#38403c; --shadow:none;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  padding-bottom:calc(76px + env(safe-area-inset-bottom));-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
+input,textarea,select{font:inherit;font-size:16px;color:var(--ink)}
+.top{position:sticky;top:0;z-index:5;background:var(--bg);
+  padding:calc(10px + env(safe-area-inset-top)) 16px 8px;border-bottom:1px solid transparent}
+.top-in{max-width:560px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{font-weight:700;font-size:20px;letter-spacing:-.01em}
+.pill{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 11px;font-size:13px;color:var(--muted);white-space:nowrap}
+.pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.pill.saved{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+main{max-width:560px;margin:0 auto;padding:0 16px 24px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin:12px 0;box-shadow:var(--shadow)}
+.card h2{font-size:15px;font-weight:650;margin:0 0 10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card h2 small{font-weight:400;color:var(--muted);font-size:13px}
+.muted{color:var(--muted)} .small{font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips.scroll{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;margin:0 -14px;padding-left:14px;padding-right:14px;scrollbar-width:none}
+.chips.scroll::-webkit-scrollbar{display:none}
+.chip{min-height:40px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--chip);font-size:15px;white-space:nowrap;flex:0 0 auto}
+.chip.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.chip.add{border-style:dashed;background:transparent}
+.chip .x{margin-left:6px;opacity:.6}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--chip);border-radius:12px;padding:4px;margin-bottom:10px}
+.seg button{border:0;background:transparent;border-radius:9px;padding:8px 2px;font-size:14px;min-height:40px}
+.seg button.sel{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:600}
+.seg button .n{display:block;font-size:11px;color:var(--muted);font-weight:400}
+.field{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);min-height:44px}
+textarea.field{resize:vertical;min-height:64px}
+label.lab{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+.row{display:flex;gap:8px;align-items:center}
+.row > .grow{flex:1;min-width:0}
+.btn{min-height:44px;padding:10px 16px;border-radius:12px;border:1px solid var(--line);background:var(--chip);font-size:15px;font-weight:550}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--bad)}
+.btn.block{width:100%}
+.btn:disabled{opacity:.5}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.icon-btn{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:22px;line-height:1;flex:0 0 auto}
+.x-btn{width:40px;height:40px;border-radius:10px;border:0;background:transparent;color:var(--muted);font-size:20px;flex:0 0 auto}
+.datebar{display:flex;align-items:center;gap:8px;margin-top:8px}
+.datepick{flex:1;position:relative;height:44px;border:1px solid var(--line);border-radius:12px;background:var(--card);display:flex;align-items:center;justify-content:center;font-weight:600}
+.datepick input{position:absolute;inset:0;opacity:0;width:100%;height:100%}
+.datepick .sub{font-weight:400;color:var(--muted);margin-left:6px;font-size:14px}
+.link{border:0;background:none;color:var(--accent);padding:6px 0;font-size:14px}
+.items{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.item{display:flex;align-items:center;gap:8px;background:var(--bg);border-radius:10px;padding:4px 4px 4px 12px}
+.item .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.gram{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:14px}
+.gram input{width:72px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card);text-align:right;min-height:40px}
+.timein{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);min-height:40px;min-width:96px}
+.rate{padding:10px 0;border-top:1px solid var(--line)}
+.rate:first-of-type{border-top:0;padding-top:0}
+.rate .lbl{display:flex;justify-content:space-between;font-size:15px;margin-bottom:6px}
+.scale{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.scale button{height:40px;border-radius:10px;border:1px solid var(--line);background:var(--chip);font-size:15px}
+.scale button.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:650}
+.scale.sev button.sel.v3,.scale.sev button.sel.v4,.scale.sev button.sel.v5{background:var(--bad);border-color:var(--bad);color:#fff}
+.scale.sev button.sel.v2{background:var(--warn);border-color:var(--warn);color:#fff}
+.bristol{display:flex;flex-direction:column;gap:6px}
+.bristol button{display:flex;align-items:center;gap:12px;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--chip);padding:6px 10px;text-align:left;font-size:14px}
+.bnum{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:15px;flex:0 0 auto;color:#fff}
+.b-ok{background:var(--ok)} .b-warn{background:var(--warn)} .b-bad{background:var(--bad)}
+.stools{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.badge{display:inline-block;font-size:12px;padding:3px 9px;border-radius:999px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.st-progress{background:var(--accent-soft);color:var(--accent)}
+.st-ok{background:var(--ok-soft);color:var(--ok)}
+.st-reaction{background:var(--bad-soft);color:var(--bad)}
+.st-retest{background:var(--warn-soft);color:var(--warn)}
+.banner{border-radius:14px;padding:12px 14px;margin:12px 0;font-size:14px;display:flex;gap:10px;align-items:center;justify-content:space-between}
+.banner.warn{background:var(--warn-soft)} .banner.info{background:var(--accent-soft)}
+.banner .btn{min-height:36px;padding:6px 12px;font-size:14px;flex:0 0 auto}
+details.test{border-top:1px solid var(--line)}
+details.test:first-of-type{border-top:0}
+details.test summary{list-style:none;display:flex;align-items:center;gap:10px;padding:12px 0;min-height:48px;cursor:pointer}
+details.test summary::-webkit-details-marker{display:none}
+details.test summary .tname{flex:1;font-size:16px}
+details.test summary::after{content:"›";color:var(--muted);font-size:20px;transition:transform .15s}
+details.test[open] summary::after{transform:rotate(90deg)}
+.tbody{padding:0 0 14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal .dow{font-size:11px;color:var(--muted);text-align:center;padding:2px 0}
+.cal button{aspect-ratio:1;border-radius:10px;border:0;background:var(--chip);font-size:14px;position:relative;padding:0}
+.cal button.empty{background:transparent}
+.cal button.lv-ok{background:var(--ok-soft);color:var(--ok);font-weight:650}
+.cal button.lv-warn{background:var(--warn-soft);color:var(--warn);font-weight:650}
+.cal button.lv-bad{background:var(--bad-soft);color:var(--bad);font-weight:650}
+.cal button.lv-log{background:var(--accent-soft)}
+.cal button.today{outline:2px solid var(--accent);outline-offset:-2px}
+.cal button .dot{position:absolute;bottom:5px;left:50%;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:currentColor}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:10px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.hlist button{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:12px 0}
+.hlist button:first-child{border-top:0}
+.hlist .d{font-weight:600}
+.hlist .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+pre.preview{white-space:pre-wrap;word-break:break-word;font-size:12px;background:var(--bg);border-radius:10px;padding:10px;max-height:320px;overflow:auto;margin:10px 0 0}
+.status{font-size:14px;margin:4px 0 8px}
+.status.ok{color:var(--ok)} .status.bad{color:var(--bad)} .status.warn{color:var(--warn)}
+ol.steps{padding-left:20px;margin:8px 0;font-size:14px;color:var(--muted)}
+ol.steps li{margin:4px 0}
+a{color:var(--accent)}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;font-size:15px}
+.switch input{width:22px;height:22px;accent-color:var(--accent)}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+.tabs-in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
+.tab{border:0;background:none;color:var(--muted);min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:550}
+.tab svg{width:24px;height:24px}
+.tab[aria-current="page"]{color:var(--accent)}
+.toast{position:fixed;left:50%;bottom:calc(72px + env(safe-area-inset-bottom));transform:translate(-50%,20px);opacity:0;pointer-events:none;
+  background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;max-width:calc(100% - 32px);transition:all .2s;z-index:20;text-align:center}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.err{background:var(--bad);color:#fff}
+.hint{font-size:13px;color:var(--muted);margin-top:8px}
+.streak{font-size:14px;margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--bg)}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in"><div class="brand">Reintro</div><button id="pill" class="pill" data-act="tab" data-tab="export">…</button></div></header>
+<main id="view"><section class="card" id="noapp"><h2>Reintro isn't running</h2>
+  <div class="small muted">The app's JavaScript didn't start. This happens in file previews that block scripts.
+  Open it through a web address instead (the hosted URL, or a local server such as <code>python -m http.server</code>).</div></section></main>
+<nav class="tabs"><div class="tabs-in">
+  <button class="tab" data-act="tab" data-tab="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Today</button>
+  <button class="tab" data-act="tab" data-tab="tests"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7 15h10"/></svg>Tests</button>
+  <button class="tab" data-act="tab" data-tab="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>History</button>
+  <button class="tab" data-act="tab" data-tab="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Export</button>
+</div></nav>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<script>
+'use strict';
+window.addEventListener('error', e => {
+  const v = document.getElementById('view');
+  if (v && !v.dataset.ok) v.innerHTML = '<section class="card"><h2>Something went wrong</h2><div class="small muted">' +
+    String(e.message || e.error || 'Unknown error').replace(/[<>&]/g, '') + '</div><div class="small muted" style="margin-top:8px">Your saved data is untouched. Try reloading.</div></section>';
+});
+/* ---------- constants ---------- */
+const DATA_KEY = 'reintro.data.v1';
+const CFG_KEY = 'reintro.cfg.v1';
+const MEALS = [['breakfast','Breakfast'],['lunch','Lunch'],['dinner','Dinner'],['snack','Snack']];
+const SYMPTOMS = [['bloating','Bloating'],['gas','Gas'],['pain','Abdominal pain'],['cramps','Cramps'],['nausea','Nausea'],
+  ['reflux','Reflux'],['fatigue','Fatigue'],['skin','Skin issues'],['headache','Headache']];
+const PHASES = [['d1','Day 1 · small'],['d2','Day 2 · full'],['obs','Observe']];
+const PHASE_LONG = {d1:'Day 1 (small portion)', d2:'Day 2 (full portion)', obs:'Observe (no test food)'};
+const STATUSES = [['untested','Not tested'],['progress','In progress'],['ok','Tolerated'],['reaction','Reaction'],['retest','Retest later']];
+const STATUS_LABEL = Object.fromEntries(STATUSES);
+const BRISTOL = [null,'Separate hard lumps','Lumpy, sausage-shaped','Sausage with cracks','Smooth, soft sausage',
+  'Soft blobs, clear edges','Mushy, ragged edges','Watery, no solid pieces'];
+const BRISTOL_CLASS = b => (b===3||b===4) ? 'b-ok' : (b===7||b===1) ? 'b-bad' : 'b-warn';
+const BRISTOL_SCORE = {1:4,2:2,3:0,4:0,5:2,6:4,7:5};
+const BACKUP_WARN_DAYS = 3;
+
+/* ---------- utils ---------- */
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => Math.random().toString(36).slice(2, 10);
+const iso = d => { const z = new Date(d.getTime() - d.getTimezoneOffset()*60000); return z.toISOString().slice(0,10); };
+const today = () => iso(new Date());
+const addDays = (s, n) => { const d = new Date(s+'T12:00:00'); d.setDate(d.getDate()+n); return iso(d); };
+const fmtDate = (s, o={weekday:'short', day:'numeric', month:'short'}) => new Date(s+'T12:00:00').toLocaleDateString(undefined, o);
+const nowTime = () => new Date().toTimeString().slice(0,5);
+const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+const lc = s => String(s||'').trim().toLowerCase();
+const uniqCI = arr => { const seen = new Set(); return arr.filter(x => { const k = lc(x); if (!k || seen.has(k)) return false; seen.add(k); return true; }); };
+function ago(ts){
+  if (!ts) return 'never';
+  const s = (Date.now()-ts)/1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s/60)+' min ago';
+  if (s < 86400) return Math.floor(s/3600)+' h ago';
+  const d = Math.floor(s/86400); return d+(d===1?' day ago':' days ago');
+}
+function lsGet(k){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch(e){ return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch(e){ return false; } }
+function setPath(o, path, val){ const ks = path.split('.'); for (let i=0;i<ks.length-1;i++) o = o[ks[i]]; o[ks[ks.length-1]] = val; }
+const b64enc = s => { const b = new TextEncoder().encode(s); let bin=''; for (let i=0;i<b.length;i+=0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i+0x8000)); return btoa(bin); };
+const b64dec = s => { const bin = atob(String(s).replace(/\s/g,'')); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); };
+
+/* ---------- data model ---------- */
+function blankDay(date){
+  return { date, meals: Object.fromEntries(MEALS.map(([k]) => [k, {time:'', items:[]}])),
+    test:{food:'', phase:''}, drinks:[], stools:[], noBM:false, sym:{}, otherSym:'',
+    sleep:null, stress:null, meds:'', exercise:'', notes:'', updatedAt:0 };
+}
+function normDay(d, date){
+  const b = blankDay(date);
+  d = Object.assign(b, d || {});
+  MEALS.forEach(([k]) => { d.meals[k] = Object.assign({time:'', items:[]}, d.meals[k] || {}); });
+  d.test = Object.assign({food:'', phase:''}, d.test || {});
+  d.sym = d.sym || {}; d.drinks = d.drinks || []; d.stools = d.stools || [];
+  return d;
+}
+function normalize(data){
+  const out = { app:'reintro', version:1, days:{}, tests:[], safeFoods:[], quickFoods:[], quickDrinks:[], listsUpdatedAt:0 };
+  if (!data || typeof data !== 'object') return out;
+  Object.entries(data.days || {}).forEach(([k, d]) => { out.days[k] = normDay(d, k); });
+  out.tests = (data.tests || []).map(t => Object.assign({id:uid(), name:'', status:'untested', start:'', end:'', note:''}, t));
+  out.safeFoods = data.safeFoods || [];
+  out.quickFoods = data.quickFoods || [];
+  out.quickDrinks = data.quickDrinks || ['Water','Powerade','Herbal tea','Coffee'];
+  out.listsUpdatedAt = data.listsUpdatedAt || 0;
+  return out;
+}
+
+/* Generic starting lists for a fresh install. No personal data here: the code is public.
+   Timestamps are 0, so an imported file or a GitHub backup always wins a merge. */
+function seedData(){
+  const names = ['Pasta','Bread','Tomato','Garlic','Onion','Lactose-free mozzarella','Regular mozzarella','Parmigiano Reggiano','Pesto','Powerade'];
+  return normalize({ days:{}, tests: names.map(n => ({id:uid(), name:n, status:'untested', start:'', end:'', note:''})),
+    safeFoods:['Rice','Chicken','Meat','Zucchini','Carrots','Olive oil','Salt'], quickFoods:[], listsUpdatedAt:0 });
+}
+
+/* ---------- state ---------- */
+let S = lsGet(DATA_KEY);
+const firstRun = !S || !S.days;
+S = firstRun ? seedData() : normalize(S);
+const CFG_DEFAULT = { gh:{repo:'', path:'diary.json', token:'', auto:true}, lastSyncAt:0, lastFileBackupAt:0, dirty:false, lastGrams:{}, hideInstall:false };
+let C = Object.assign({}, CFG_DEFAULT, lsGet(CFG_KEY) || {});
+C.gh = Object.assign({}, CFG_DEFAULT.gh, C.gh || {});
+C.lastGrams = C.lastGrams || {};
+
+const ui = { tab:'today', date:today(), meal:defaultMeal(), histMonth:today().slice(0,7),
+  exFrom:addDays(today(), -13), exTo:today(), openTests:new Set(), sync:'idle', syncErr:'', pendingImport:null, preview:false };
+
+function defaultMeal(){ const h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 15 ? 'lunch' : h < 18 ? 'snack' : 'dinner'; }
+
+let persistTimer = null;
+function persistNow(){
+  clearTimeout(persistTimer);
+  const ok = lsSet(DATA_KEY, S) && lsSet(CFG_KEY, C);
+  if (!ok) toast('Could not save on this device (storage blocked or full). Export a backup now!', true);
+  return ok;
+}
+function persistSoon(){ clearTimeout(persistTimer); persistTimer = setTimeout(persistNow, 300); }
+function saveCfg(){ lsSet(CFG_KEY, C); }
+if (firstRun) persistNow();
+try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch(e){}
+
+function changed({rerender=true, lists=false} = {}){
+  if (lists) S.listsUpdatedAt = Date.now();
+  C.dirty = true;
+  if (rerender) persistNow(); else persistSoon();
+  flashSaved();
+  scheduleSync();
+  if (rerender) render();
+}
+const hasData = d => !!d && !d.deleted && d.updatedAt > 0;
+const getDay = date => hasData(S.days[date]) ? S.days[date] : null;
+function ensureDay(date){
+  let d = S.days[date];
+  if (!d || d.deleted){ d = blankDay(date); S.days[date] = d; }
+  return d;
+}
+function editDay(fn, opt){ const d = ensureDay(ui.date); fn(d); d.deleted = false; d.updatedAt = Date.now(); changed(opt); }
+
+/* ---------- derived ---------- */
+function quickFoods(d){
+  const tested = S.tests.filter(t => t.status !== 'untested').map(t => t.name);
+  return uniqCI([d && d.test.food, ...S.safeFoods, ...tested, ...S.quickFoods].filter(Boolean));
+}
+function foodsOf(d){
+  const s = [];
+  MEALS.forEach(([m]) => d.meals[m].items.forEach(i => i.name && s.push(i.name)));
+  d.drinks.forEach(x => x.name && !/^water$/i.test(x.name.trim()) && s.push(x.name));
+  return uniqCI(s);
+}
+function firstSeenMap(){
+  const map = {};
+  Object.keys(S.days).sort().forEach(k => { const d = S.days[k]; if (!hasData(d)) return;
+    foodsOf(d).forEach(f => { const key = lc(f); if (!(key in map)) map[key] = k; }); });
+  return map;
+}
+function newFoodsOn(d, fs){ const safe = new Set(S.safeFoods.map(lc)); return foodsOf(d).filter(f => !safe.has(lc(f)) && fs[lc(f)] === d.date); }
+function dayScore(d){
+  const vals = SYMPTOMS.map(([k]) => d.sym[k]).filter(v => v != null);
+  d.stools.forEach(s => vals.push(BRISTOL_SCORE[s.b] ?? 0));
+  return vals.length ? Math.max(...vals) : null;
+}
+const level = sc => sc == null ? 'log' : sc <= 1 ? 'ok' : sc <= 3 ? 'warn' : 'bad';
+function bristolStreak(){
+  let date = today(), n = 0;
+  const t = getDay(date);
+  if (!t || (!t.stools.length && !t.noBM)) date = addDays(date, -1);
+  for (let i = 0; i < 60; i++, date = addDays(date, -1)){
+    const d = getDay(date);
+    if (!d) break;
+    if (d.stools.length){ if (d.stools.every(s => s.b === 3 || s.b === 4)) n++; else break; }
+    else if (!d.noBM) break;
+  }
+  return n;
+}
+const backupTs = () => Math.max(C.lastSyncAt || 0, C.lastFileBackupAt || 0);
+const ghReady = () => !!(C.gh.token && /^[\w.-]+\/[\w.-]+$/.test(C.gh.repo) && C.gh.path);
+const loggedDayCount = () => Object.values(S.days).filter(d => hasData(d) && d.updatedAt > 1).length;
+
+/* ---------- toast / pill ---------- */
+let toastTimer = null;
+function toast(msg, err=false){
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.className = 'toast' + (err ? ' err' : ''); }, err ? 4200 : 1800);
+}
+let pillFlash = null;
+function flashSaved(){
+  const p = $('#pill'); p.textContent = 'Saved ✓'; p.className = 'pill saved';
+  clearTimeout(pillFlash); pillFlash = setTimeout(() => { pillFlash = null; updatePill(); }, 1100);
+}
+function updatePill(){
+  if (pillFlash) return;
+  const p = $('#pill'); let txt, cls;
+  if (ghReady()){
+    if (ui.sync === 'syncing'){ txt = 'Backing up…'; cls = ''; }
+    else if (ui.sync === 'error'){ txt = 'Backup failed'; cls = 'bad'; }
+    else if (C.dirty){ txt = navigator.onLine ? 'Backup pending' : 'Offline · pending'; cls = 'warn'; }
+    else { txt = 'Backed up ' + ago(C.lastSyncAt); cls = 'ok'; }
+  } else {
+    const ts = backupTs();
+    txt = ts ? 'Backup ' + ago(ts) : 'Not backed up';
+    cls = (!ts || Date.now() - ts > BACKUP_WARN_DAYS*864e5) ? 'warn' : 'ok';
+  }
+  p.textContent = txt; p.className = 'pill ' + cls;
+}
+
+/* ---------- render ---------- */
+function render(){
+  const views = {today:renderToday, tests:renderTests, history:renderHistory, export:renderExport};
+  $('#view').innerHTML = views[ui.tab]();
+  $('#view').dataset.ok = '1';
+  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-current', b.dataset.tab === ui.tab ? 'page' : 'false'));
+  updatePill();
+}
+const chip = (label, act, attrs='', sel=false, extra='') => `<button class="chip${sel?' sel':''}${extra}" data-act="${act}" ${attrs}>${label}</button>`;
+const scale = (act, key, val, sev=true) => `<div class="scale${sev?' sev':''}">${[0,1,2,3,4,5].map(v =>
+  `<button class="v${v}${val===v?' sel':''}" data-act="${act}" data-k="${key}" data-v="${v}" aria-label="${v}">${v}</button>`).join('')}</div>`;
+
+function banners(onExport=false){
+  let h = '';
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+  if (isIOS && !standalone && !C.hideInstall)
+    h += `<div class="banner info"><span>Install: tap <b>Share → Add to Home Screen</b>, then only log from the icon. Safari tabs keep separate data.</span><button class="btn" data-act="hide-install">OK</button></div>`;
+  if (onExport) return h;
+  if (ui.sync === 'error')
+    h +=`<div class="banner warn"><span>Automatic backup failed: ${esc(ui.syncErr)}</span><button class="btn" data-act="tab" data-tab="export">Fix</button></div>`;
+  else if (!ghReady()){
+    const ts = backupTs();
+    if (loggedDayCount() > 0 && (!ts || Date.now() - ts > BACKUP_WARN_DAYS*864e5))
+      h += `<div class="banner warn"><span>${ts ? 'Last backup ' + ago(ts) + '.' : 'No backup yet.'} Set up auto-backup or save a file.</span><button class="btn" data-act="tab" data-tab="export">Back up</button></div>`;
+  }
+  return h;
+}
+
+function renderToday(){
+  const date = ui.date, d = getDay(date) || blankDay(date), isToday = date === today();
+  const label = isToday ? 'Today' : date === addDays(today(), -1) ? 'Yesterday' : fmtDate(date);
+  const sub = isToday || date === addDays(today(), -1) ? fmtDate(date) : new Date(date+'T12:00:00').getFullYear();
+  // test food
+  const testOpts = S.tests.filter(t => t.status !== 'ok' || lc(t.name) === lc(d.test.food));
+  const cur = S.tests.find(t => t.status === 'progress');
+  let h = banners() + `
+  <div class="datebar">
+    <button class="icon-btn" data-act="day-shift" data-n="-1" aria-label="Previous day">‹</button>
+    <label class="datepick">${esc(label)}<span class="sub">${esc(sub)}</span><input type="date" value="${date}" data-change="day-set" aria-label="Pick date"></label>
+    <button class="icon-btn" data-act="day-shift" data-n="1" aria-label="Next day" ${isToday?'disabled style="opacity:.35"':''}>›</button>
+  </div>
+  ${isToday ? '' : '<button class="link" data-act="day-today">← Back to today</button>'}
+
+  <section class="card"><h2>Test food <small>${cur ? 'in progress: ' + esc(cur.name) : ''}</small></h2>
+    <div class="chips">${chip('None', 'test-food', 'data-name=""', !d.test.food)}${testOpts.map(t =>
+      chip(esc(t.name), 'test-food', `data-name="${esc(t.name)}"`, lc(t.name) === lc(d.test.food))).join('')}</div>
+    ${d.test.food ? `<label class="lab">Phase</label><div class="chips">${PHASES.map(([k, l]) => chip(l, 'test-phase', `data-v="${k}"`, d.test.phase === k)).join('')}</div>` : ''}
+    <div class="hint">Day 1 small portion → Day 2 full portion → Day 3+ observe without it.</div>
+  </section>`;
+
+  // meals
+  const m = ui.meal, meal = d.meals[m];
+  const counts = MEALS.map(([k, l]) => { const n = d.meals[k].items.length; return `<button class="${k===m?'sel':''}" data-act="meal-tab" data-m="${k}">${l}<span class="n">${n ? n + ' item' + (n>1?'s':'') : '–'}</span></button>`; }).join('');
+  const prev = findPrevMealsDay(date);
+  const empty = MEALS.every(([k]) => !d.meals[k].items.length);
+  h += `<section class="card"><h2>Meals ${empty && prev ? `<button class="link" data-act="meals-copy" data-from="${prev}">Copy ${esc(fmtDate(prev,{weekday:'short'}))}'s meals</button>` : ''}</h2>
+    <div class="seg">${counts}</div>
+    <div class="row" style="margin-bottom:10px"><span class="grow muted small">Time</span>
+      <input class="timein" type="time" value="${esc(meal.time)}" data-bind="meals.${m}.time"></div>
+    <div class="items">${meal.items.map((it, i) => `<div class="item"><span class="nm">${esc(it.name)}</span>
+      <span class="gram"><input type="number" inputmode="numeric" min="0" value="${it.g ?? ''}" placeholder="–" data-bind="meals.${m}.items.${i}.g" data-num aria-label="grams of ${esc(it.name)}">g</span>
+      <button class="x-btn" data-act="item-del" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>
+    <div class="chips scroll">${quickFoods(d).map(f => chip('+ ' + esc(f), 'item-add', `data-name="${esc(f)}"`)).join('')}</div>
+    <div class="row" style="margin-top:8px"><input id="customFood" class="field grow" placeholder="Other food…" enterkeyhint="done" autocomplete="off"><button class="btn" data-act="item-add-custom">Add</button></div>
+  </section>`;
+
+  // drinks
+  h += `<section class="card"><h2>Drinks</h2>
+    <div class="items">${d.drinks.map((x, i) => `<div class="item"><span class="nm">${esc(x.name)}</span>
+      <span class="gram"><input type="number" inputmode="numeric" min="0" step="50" value="${x.ml ?? ''}" placeholder="–" data-bind="drinks.${i}.ml" data-num aria-label="ml of ${esc(x.name)}">ml</span>
+      <button class="x-btn" data-act="drink-del" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>
+    <div class="chips scroll">${S.quickDrinks.map(n => chip('+ ' + esc(n) + ' 250', 'drink-add', `data-name="${esc(n)}"`)).join('')}</div>
+    <div class="row" style="margin-top:8px"><input id="customDrink" class="field grow" placeholder="Other drink…" enterkeyhint="done" autocomplete="off"><button class="btn" data-act="drink-add-custom">Add</button></div>
+  </section>`;
+
+  // stool
+  h += `<section class="card"><h2>Stool <small>${d.stools.length ? d.stools.length + ' BM' + (d.stools.length>1?'s':'') : d.noBM ? 'none today' : ''}</small></h2>
+    <div class="stools">${d.stools.map((s, i) => `<div class="item"><span class="bnum ${BRISTOL_CLASS(s.b)}">${s.b}</span><span class="nm small">#${i+1} · ${BRISTOL[s.b]}</span>
+      <input class="timein" type="time" value="${esc(s.time)}" data-bind="stools.${i}.time" aria-label="time">
+      <button class="x-btn" data-act="bm-del" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>
+    <div class="muted small" style="margin-bottom:6px">Tap to add a bowel movement:</div>
+    <div class="bristol">${[1,2,3,4,5,6,7].map(b => `<button data-act="bm-add" data-b="${b}"><span class="bnum ${BRISTOL_CLASS(b)}">${b}</span>${BRISTOL[b]}</button>`).join('')}</div>
+    ${d.stools.length ? '' : `<div class="chips" style="margin-top:10px">${chip('No bowel movement today', 'nobm', '', d.noBM)}</div>`}
+  </section>`;
+
+  // symptoms
+  h += `<section class="card"><h2>Symptoms <small>0 none · 5 severe</small></h2>
+    ${SYMPTOMS.map(([k, l]) => `<div class="rate"><div class="lbl"><span>${l}</span></div>${scale('sym', k, d.sym[k])}</div>`).join('')}
+    <button class="btn block" style="margin-top:10px" data-act="sym-none">No symptoms (set all to 0)</button>
+    <label class="lab">Other symptoms &amp; when they started</label>
+    <textarea class="field" rows="2" data-bind="otherSym" placeholder="e.g. urgency at 15:00, ~2 h after lunch">${esc(d.otherSym)}</textarea>
+  </section>`;
+
+  // context
+  h += `<section class="card"><h2>Context</h2>
+    <div class="rate"><div class="lbl"><span>Sleep quality</span><span class="muted small">0 bad · 5 great</span></div>${scale('ctx', 'sleep', d.sleep, false)}</div>
+    <div class="rate"><div class="lbl"><span>Stress</span><span class="muted small">0 none · 5 high</span></div>${scale('ctx', 'stress', d.stress)}</div>
+    <label class="lab">Medications / supplements</label><input class="field" data-bind="meds" value="${esc(d.meds)}" placeholder="none">
+    <label class="lab">Exercise</label><input class="field" data-bind="exercise" value="${esc(d.exercise)}" placeholder="e.g. 30 min walk">
+  </section>
+  <section class="card"><h2>Notes</h2>
+    <textarea class="field" rows="3" data-bind="notes" placeholder="Anything else…">${esc(d.notes)}</textarea>
+  </section>
+  ${getDay(date) ? '<button class="btn danger block" data-act="day-clear">Clear this day</button>' : ''}`;
+  return h;
+}
+function findPrevMealsDay(date){
+  return Object.keys(S.days).filter(k => k < date && hasData(S.days[k]) && MEALS.some(([m]) => S.days[k].meals[m].items.length)).sort().pop() || null;
+}
+
+function renderTests(){
+  const cur = S.tests.filter(t => t.status === 'progress');
+  const next = S.tests.find(t => t.status === 'untested');
+  const streak = bristolStreak();
+  let h = `<section class="card"><h2>Current test</h2>`;
+  if (cur.length) h += cur.map(t => { const n = t.start ? Math.round((new Date(today()+'T12:00') - new Date(t.start+'T12:00'))/864e5) + 1 : null;
+      return `<div style="margin-bottom:8px"><b>${esc(t.name)}</b> <span class="badge st-progress">${n ? 'day ' + n : 'in progress'}</span>${t.note ? `<div class="muted small" style="margin-top:4px">${esc(t.note)}</div>` : ''}</div>`; }).join('');
+  else h += `<div class="muted">No test in progress.</div>${next ? `<button class="btn primary block" style="margin-top:10px" data-act="t-start" data-id="${next.id}">Start testing ${esc(next.name)} today</button>` : ''}`;
+  h += `<div class="streak">Normal stool streak (Bristol 3–4): <b>${streak} day${streak===1?'':'s'}</b></div></section>`;
+
+  h += `<section class="card"><h2>Foods to test <small>${S.tests.filter(t => t.status === 'ok').length}/${S.tests.length} tolerated</small></h2>
+    ${S.tests.map((t, i) => `<details class="test" data-id="${t.id}" ${ui.openTests.has(t.id) ? 'open' : ''}>
+      <summary><span class="tname">${esc(t.name)}</span><span class="badge st-${t.status}">${STATUS_LABEL[t.status]}</span></summary>
+      <div class="tbody">
+        <label class="lab">Status</label>
+        <select class="field" data-change="t-status" data-id="${t.id}">${STATUSES.map(([k, l]) => `<option value="${k}" ${t.status===k?'selected':''}>${l}</option>`).join('')}</select>
+        <div class="grid2"><div><label class="lab">Start</label><input class="field" type="date" value="${esc(t.start)}" data-tbind="start" data-id="${t.id}"></div>
+          <div><label class="lab">End</label><input class="field" type="date" value="${esc(t.end)}" data-tbind="end" data-id="${t.id}"></div></div>
+        <label class="lab">Result note</label><textarea class="field" rows="2" data-tbind="note" data-id="${t.id}">${esc(t.note)}</textarea>
+        <div class="row" style="margin-top:10px"><button class="icon-btn" data-act="t-move" data-id="${t.id}" data-n="-1" ${i===0?'disabled':''} aria-label="Move up">↑</button>
+          <button class="icon-btn" data-act="t-move" data-id="${t.id}" data-n="1" ${i===S.tests.length-1?'disabled':''} aria-label="Move down">↓</button>
+          <span class="grow"></span><button class="btn danger" data-act="t-del" data-id="${t.id}">Remove</button></div>
+      </div></details>`).join('')}
+    <div class="row" style="margin-top:10px"><input id="newTest" class="field grow" placeholder="Add a food to test…" autocomplete="off"><button class="btn" data-act="t-add">Add</button></div>
+  </section>`;
+
+  const list = (arr, kind) => `<div class="chips">${arr.map((f, i) => `<button class="chip" data-act="list-del" data-kind="${kind}" data-i="${i}">${esc(f)}<span class="x">×</span></button>`).join('')}</div>`;
+  h += `<section class="card"><h2>Base (safe) foods</h2>${list(S.safeFoods, 'safeFoods')}
+    <div class="row" style="margin-top:10px"><input id="add-safeFoods" class="field grow" placeholder="Add safe food…" autocomplete="off"><button class="btn" data-act="list-add" data-kind="safeFoods">Add</button></div></section>
+  <section class="card"><h2>Extra quick-add foods <small>shown as chips</small></h2>${list(S.quickFoods, 'quickFoods')}
+    <div class="row" style="margin-top:10px"><input id="add-quickFoods" class="field grow" placeholder="Add food…" autocomplete="off"><button class="btn" data-act="list-add" data-kind="quickFoods">Add</button></div></section>
+  <section class="card"><h2>Quick-add drinks</h2>${list(S.quickDrinks, 'quickDrinks')}
+    <div class="row" style="margin-top:10px"><input id="add-quickDrinks" class="field grow" placeholder="Add drink…" autocomplete="off"><button class="btn" data-act="list-add" data-kind="quickDrinks">Add</button></div></section>`;
+  return h;
+}
+
+function renderHistory(){
+  const [y, mo] = ui.histMonth.split('-').map(Number);
+  const first = new Date(y, mo-1, 1), dim = new Date(y, mo, 0).getDate(), lead = (first.getDay()+6) % 7;
+  const title = first.toLocaleDateString(undefined, {month:'long', year:'numeric'});
+  let cells = ['Mo','Tu','We','Th','Fr','Sa','Su'].map(x => `<div class="dow">${x}</div>`).join('');
+  for (let i = 0; i < lead; i++) cells += '<button class="empty" disabled></button>';
+  const t = today(), days = [];
+  for (let n = 1; n <= dim; n++){
+    const k = `${y}-${String(mo).padStart(2,'0')}-${String(n).padStart(2,'0')}`, d = getDay(k);
+    let cls = d ? 'lv-' + level(dayScore(d)) : '';
+    if (k === t) cls += ' today';
+    if (d) days.push(d);
+    cells += `<button class="${cls}" data-act="h-open" data-date="${k}" ${k > t ? 'disabled style="opacity:.4"' : ''}>${n}${d && d.test.food && d.test.phase !== 'obs' ? '<span class="dot"></span>' : ''}</button>`;
+  }
+  let h = `<section class="card"><h2><button class="icon-btn" data-act="h-month" data-n="-1" aria-label="Previous month">‹</button><span>${esc(title)}</span>
+      <button class="icon-btn" data-act="h-month" data-n="1" aria-label="Next month">›</button></h2>
+    <div class="cal">${cells}</div>
+    <div class="legend"><span><i style="background:var(--ok)"></i>OK</span><span><i style="background:var(--warn)"></i>Mild</span><span><i style="background:var(--bad)"></i>Marked</span><span><i style="background:var(--accent-soft)"></i>Logged, no ratings</span><span>• test food eaten</span></div>
+    <div class="hint">Colour = worst of symptom ratings and Bristol score (3–4 normal).</div></section>`;
+  days.reverse();
+  h += `<section class="card"><h2>Days logged <small>${days.length}</small></h2>`;
+  if (!days.length) h += '<div class="muted">Nothing logged this month.</div>';
+  h += `<div class="hlist">${days.map(d => {
+    const tags = [];
+    if (d.test.food) tags.push(`<span class="badge st-progress">${esc(d.test.food)}${d.test.phase ? ' · ' + esc(PHASES.find(p => p[0]===d.test.phase)?.[1] || '') : ''}</span>`);
+    if (d.stools.length) tags.push(`<span class="badge">BM ${d.stools.length} · B ${d.stools.map(s => s.b).join(',')}</span>`);
+    else if (d.noBM) tags.push('<span class="badge">No BM</span>');
+    const sy = SYMPTOMS.filter(([k]) => (d.sym[k] || 0) >= 2).map(([k, l]) => `${l} ${d.sym[k]}`);
+    if (sy.length) tags.push(`<span class="badge st-reaction">${esc(sy.join(', '))}</span>`);
+    return `<button data-act="h-open" data-date="${d.date}"><span class="d">${esc(fmtDate(d.date))}</span><div class="tags">${tags.join('') || '<span class="muted small">no details</span>'}</div></button>`;
+  }).join('')}</div></section>`;
+  return h;
+}
+
+function renderExport(){
+  const n = daysInRange(ui.exFrom, ui.exTo).length;
+  let h = banners(true) + `<section class="card"><h2>Copy for AI <small>${n} day${n===1?'':'s'} in range</small></h2>
+    <div class="chips">${[7,14,30].map(x => chip('Last ' + x + ' days', 'ex-range', `data-n="${x}"`)).join('')}${chip('All', 'ex-range', 'data-n="all"')}</div>
+    <div class="grid2"><div><label class="lab">From</label><input class="field" type="date" value="${ui.exFrom}" data-change="ex-from"></div>
+      <div><label class="lab">To</label><input class="field" type="date" value="${ui.exTo}" data-change="ex-to"></div></div>
+    <div class="btns"><button class="btn primary" data-act="md-copy">Copy for AI</button>${navigator.share ? '<button class="btn" data-act="md-share">Share…</button>' : '<button class="btn" data-act="md-preview">Preview</button>'}</div>
+    ${navigator.share ? '<button class="link" data-act="md-preview">' + (ui.preview ? 'Hide preview' : 'Show preview') + '</button>' : ''}
+    ${ui.preview ? `<pre class="preview">${esc(buildMarkdown(ui.exFrom, ui.exTo))}</pre>` : ''}
+  </section>`;
+
+  const st = ui.sync === 'error' ? `<div class="status bad">✕ ${esc(ui.syncErr)}</div>`
+    : ui.sync === 'syncing' ? '<div class="status">Backing up…</div>'
+    : ghReady() ? `<div class="status ${C.dirty ? 'warn' : 'ok'}">${C.dirty ? '● Changes not yet backed up' : '✓ Backed up ' + ago(C.lastSyncAt)}</div>`
+    : '<div class="status warn">Not set up</div>';
+  h += `<section class="card"><h2>Automatic backup to GitHub</h2>${st}
+    <label class="lab">Private repo (owner/name)</label><input class="field" data-cfg="gh.repo" value="${esc(C.gh.repo)}" placeholder="your-user/reintro-data" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <label class="lab">File path</label><input class="field" data-cfg="gh.path" value="${esc(C.gh.path)}" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <label class="lab">Fine-grained access token</label><input class="field" type="password" data-cfg="gh.token" value="${esc(C.gh.token)}" placeholder="github_pat_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <label class="switch"><span>Back up automatically after changes</span><input type="checkbox" data-cfg="gh.auto" ${C.gh.auto ? 'checked' : ''}></label>
+    <div class="btns"><button class="btn primary" data-act="gh-sync" ${ghReady() ? '' : 'disabled'}>Back up now</button><button class="btn" data-act="gh-restore" ${ghReady() ? '' : 'disabled'}>Restore…</button></div>
+    <details style="margin-top:10px"><summary class="small muted">How to set this up (once, ~3 min)</summary><ol class="steps">
+      <li>Create a <b>private</b> GitHub repo, e.g. <code>reintro-data</code> (tick “Add a README”).</li>
+      <li>GitHub → Settings → Developer settings → <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Fine-grained tokens → Generate new</a>.</li>
+      <li>Repository access: <b>Only select repositories</b> → your data repo.</li>
+      <li>Permissions → Repository → <b>Contents: Read and write</b>. Nothing else.</li>
+      <li>Set expiration (max 1 year), generate, paste it above.</li>
+    </ol><div class="hint">Every backup is a commit, so you get a full history. The token stays on this device and is never included in exports.</div></details>
+  </section>`;
+
+  h += `<section class="card"><h2>Files <small>last file backup: ${ago(C.lastFileBackupAt)}</small></h2>
+    <div class="btns"><button class="btn primary" data-act="json-backup">Backup file (JSON)</button><button class="btn" data-act="csv">Export CSV</button></div>
+    <button class="btn block" style="margin-top:8px" data-act="import">Import / restore JSON…</button>
+    ${ui.pendingImport ? `<div class="banner info" style="flex-direction:column;align-items:stretch"><span>File contains <b>${Object.values(ui.pendingImport.days).filter(hasData).length}</b> days and ${ui.pendingImport.tests.length} test foods. How should it be applied?</span>
+      <div class="btns" style="margin-top:0"><button class="btn primary" data-act="import-merge">Merge (newer wins)</button><button class="btn danger" data-act="import-replace">Replace all</button></div>
+      <button class="link" data-act="import-cancel">Cancel</button></div>` : ''}
+    <div class="hint">On iPhone, the backup opens the share sheet. Choose <b>Save to Files → iCloud Drive</b>.</div>
+  </section>
+  <section class="card"><h2>How your data is stored</h2><div class="small muted">
+    Everything is saved instantly on this device (browser storage). Deleting the home-screen icon or clearing Safari website data erases it,
+    so keep automatic GitHub backup on and save a JSON file now and then. The CSV export includes the CSV columns only; use JSON for restoring.</div></section>`;
+  return h;
+}
+
+/* ---------- export builders ---------- */
+function daysInRange(from, to){ return Object.keys(S.days).filter(k => k >= from && k <= to && hasData(S.days[k])).sort().map(k => S.days[k]); }
+const cell = s => String(s ?? '').replace(/\|/g, '/').replace(/\s*\n\s*/g, '; ').trim() || '—';
+const itemsStr = items => items.filter(i => i.name).map(i => i.name + (i.g ? ` ${i.g} g` : '')).join(', ');
+const drinksStr = d => d.drinks.map(x => x.name + (x.ml ? ` ${x.ml} ml` : '')).join(', ');
+const bmStr = d => d.stools.length ? String(d.stools.length) : d.noBM ? '0' : '—';
+const bristolStr = d => d.stools.length ? d.stools.map(s => s.b).join(', ') : d.noBM ? 'none' : '—';
+const testStr = d => d.test.food ? d.test.food + (d.test.phase ? ' — ' + (PHASE_LONG[d.test.phase] || d.test.phase) : '') : '—';
+function symStr(d, min){
+  const rec = SYMPTOMS.filter(([k]) => d.sym[k] != null);
+  if (!rec.length) return 'not recorded';
+  const hits = rec.filter(([k]) => d.sym[k] >= min).map(([k, l]) => `${l.toLowerCase()} ${d.sym[k]}`);
+  return hits.length ? hits.join(', ') : (min <= 1 ? 'all 0' : 'none');
+}
+function buildMarkdown(from, to){
+  const days = daysInRange(from, to), fs = firstSeenMap(), L = [];
+  L.push('# Food reintroduction diary', '');
+  L.push(`Period: ${from} to ${to} (${days.length} logged day${days.length===1?'':'s'}). Generated ${today()}.`, '');
+  L.push('Scales: symptoms 0–5 (0 = none, 5 = severe). Bristol stool scale 1–7 (3–4 = normal, 5–7 = loose, 1–2 = hard). Sleep 0–5 (5 = great), stress 0–5 (5 = high). "—" = not recorded.', '');
+  L.push('Protocol: one new food at a time. Day 1 small portion, Day 2 full portion, Day 3+ observe without the test food.', '');
+  L.push('## Base (safe) diet', '', S.safeFoods.join(', ') || '—', '');
+  L.push('## Reintroduction tests', '', '| # | Food | Status | Start | End | Result / note |', '|---|---|---|---|---|---|');
+  S.tests.forEach((t, i) => L.push(`| ${i+1} | ${cell(t.name)} | ${STATUS_LABEL[t.status]} | ${cell(t.start)} | ${cell(t.end)} | ${cell(t.note)} |`));
+  L.push('');
+  if (!days.length){ L.push('_No days logged in this period._', ''); }
+  else {
+    L.push('## Overview', '', '| Date | Test food (phase) | BMs | Bristol | Symptoms ≥ 2 | Sleep | Stress |', '|---|---|---|---|---|---|---|');
+    days.forEach(d => L.push(`| ${fmtDate(d.date,{weekday:'short'})} ${d.date} | ${cell(testStr(d))} | ${bmStr(d)} | ${bristolStr(d)} | ${cell(symStr(d, 2))} | ${d.sleep ?? '—'} | ${d.stress ?? '—'} |`));
+    L.push('', '## Daily details', '');
+    days.forEach(d => {
+      L.push(`### ${fmtDate(d.date, {weekday:'long', day:'numeric', month:'short', year:'numeric'})} (${d.date})`);
+      L.push(`- **Test food:** ${testStr(d)}`);
+      MEALS.forEach(([k, l]) => { const ml = d.meals[k]; if (ml.items.length) L.push(`- **${l}${ml.time ? ' ' + ml.time : ''}:** ${itemsStr(ml.items)}`); });
+      if (MEALS.every(([k]) => !d.meals[k].items.length)) L.push('- **Meals:** not recorded');
+      L.push(`- **Drinks:** ${drinksStr(d) || 'not recorded'}`);
+      L.push(`- **Stool:** ${d.stools.length ? d.stools.length + ' BM — ' + d.stools.map(s => 'Bristol ' + s.b + (s.time ? ' at ' + s.time : '')).join('; ') : d.noBM ? 'no bowel movement' : 'not recorded'}`);
+      L.push(`- **Symptoms:** ${symStr(d, 1)}`);
+      if (d.otherSym.trim()) L.push(`- **Other symptoms:** ${d.otherSym.trim().replace(/\n+/g, '; ')}`);
+      if (d.sleep != null || d.stress != null) L.push(`- **Sleep / stress:** ${d.sleep ?? '—'}/5 · ${d.stress ?? '—'}/5`);
+      if (d.meds.trim()) L.push(`- **Medications:** ${d.meds.trim()}`);
+      if (d.exercise.trim()) L.push(`- **Exercise:** ${d.exercise.trim()}`);
+      const nf = newFoodsOn(d, fs);
+      if (nf.length) L.push(`- **First time logged (not in base diet):** ${nf.join(', ')}${nf.length > 1 ? ' ⚠ more than one new item on the same day' : ''}`);
+      if (d.notes.trim()) L.push(`- **Notes:** ${d.notes.trim().replace(/\n+/g, '; ')}`);
+      L.push('');
+    });
+  }
+  L.push('---', '', 'Please analyze this diary: look for patterns between foods/test phases and stool or symptoms (allowing for 24–72 h delays), point out confounders, judge whether each tested food looks tolerated, and suggest concrete next steps (continue, retest, pause, or what to test next and how).');
+  return L.join('\n');
+}
+function buildCSV(){
+  const head = ['date','test_food','test_phase', ...MEALS.map(([k]) => k), 'drinks','bm_count','bristol', ...SYMPTOMS.map(([k]) => k),
+    'other_symptoms','sleep','stress','medications','exercise','notes'];
+  const q = v => { const s = String(v ?? ''); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const rows = daysInRange('0000-00-00', '9999-12-31').map(d => [d.date, d.test.food, d.test.phase ? PHASE_LONG[d.test.phase] : '',
+    ...MEALS.map(([k]) => (d.meals[k].time ? d.meals[k].time + ' ' : '') + itemsStr(d.meals[k].items)),
+    drinksStr(d), d.stools.length || (d.noBM ? 0 : ''), d.stools.map(s => s.b).join(' '),
+    ...SYMPTOMS.map(([k]) => d.sym[k] ?? ''), d.otherSym, d.sleep ?? '', d.stress ?? '', d.meds, d.exercise, d.notes]);
+  return '﻿' + [head, ...rows].map(r => r.map(q).join(',')).join('\r\n');
+}
+const syncPayload = () => ({ app:'reintro', version:1, days:S.days, tests:S.tests, safeFoods:S.safeFoods, quickFoods:S.quickFoods, quickDrinks:S.quickDrinks, listsUpdatedAt:S.listsUpdatedAt });
+
+async function copyText(text){
+  try { await navigator.clipboard.writeText(text); return true; } catch(e){}
+  try { const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length); const ok = document.execCommand('copy'); ta.remove(); return ok; } catch(e){ return false; }
+}
+async function saveFile(name, text, mime){
+  const blob = new Blob([text], {type:mime});
+  const touch = matchMedia('(pointer: coarse)').matches;
+  if (touch && navigator.canShare){
+    const file = new File([blob], name, {type:mime});
+    if (navigator.canShare({files:[file]})){
+      try { await navigator.share({files:[file], title:name}); return true; }
+      catch(e){ if (e.name === 'AbortError') return false; }
+    }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  return true;
+}
+
+/* ---------- merge / sync ---------- */
+function mergeInto(local, remote){
+  let changedAny = false;
+  Object.entries(remote.days || {}).forEach(([k, rd]) => {
+    const ld = local.days[k];
+    if (!ld || (rd.updatedAt || 0) > (ld.updatedAt || 0)){ local.days[k] = normDay(rd, k); changedAny = true; }
+  });
+  if ((remote.listsUpdatedAt || 0) > (local.listsUpdatedAt || 0)){
+    local.tests = remote.tests; local.safeFoods = remote.safeFoods; local.quickFoods = remote.quickFoods;
+    local.quickDrinks = remote.quickDrinks; local.listsUpdatedAt = remote.listsUpdatedAt; changedAny = true;
+  }
+  return changedAny;
+}
+async function ghFetch(method, path, body){
+  return fetch('https://api.github.com' + path, { method, cache:'no-store',
+    headers: Object.assign({'Accept':'application/vnd.github+json', 'Authorization':'Bearer ' + C.gh.token}, body ? {'Content-Type':'application/json'} : {}),
+    body: body ? JSON.stringify(body) : undefined });
+}
+function ghErr(r){
+  if (r.status === 401) return 'Token rejected (wrong or expired).';
+  if (r.status === 403) return 'Token lacks permission (needs Contents: Read and write) or rate-limited.';
+  if (r.status === 404) return 'Repo not found, or the token has no access to it.';
+  return 'GitHub error ' + r.status + '.';
+}
+const ghFile = () => `/repos/${C.gh.repo}/contents/${C.gh.path.split('/').map(encodeURIComponent).join('/')}`;
+async function ghPull(){
+  const r = await ghFetch('GET', ghFile());
+  if (r.status === 404){
+    const rr = await ghFetch('GET', `/repos/${C.gh.repo}`);
+    if (!rr.ok) throw new Error(ghErr(rr));
+    return {data:null, sha:null};
+  }
+  if (!r.ok) throw new Error(ghErr(r));
+  const j = await r.json();
+  let b64 = j.content;
+  if (!b64 && j.sha){ const br = await ghFetch('GET', `/repos/${C.gh.repo}/git/blobs/${j.sha}`); if (!br.ok) throw new Error(ghErr(br)); b64 = (await br.json()).content; }
+  const txt = b64 ? b64dec(b64) : '';
+  return {data: txt.trim() ? JSON.parse(txt) : null, sha:j.sha};
+}
+async function ghPush(payload, sha){
+  const body = {message: 'Backup ' + new Date().toISOString().slice(0,16).replace('T',' '), content: b64enc(JSON.stringify(payload, null, 1))};
+  if (sha) body.sha = sha;
+  return ghFetch('PUT', ghFile(), body);
+}
+let syncing = false, syncAgain = false, syncTimer = null;
+function scheduleSync(delay=8000){ if (!ghReady() || !C.gh.auto) return; clearTimeout(syncTimer); syncTimer = setTimeout(sync, delay); }
+function setSync(state, err=''){ ui.sync = state; ui.syncErr = err; updatePill(); if (ui.tab === 'export' && !isTyping()) render(); }
+const isTyping = () => { const a = document.activeElement; return a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'checkbox'; };
+async function sync(){
+  clearTimeout(syncTimer);
+  if (!ghReady()) return;
+  if (syncing){ syncAgain = true; return; }
+  if (!navigator.onLine){ updatePill(); return; }
+  syncing = true; setSync('syncing');
+  try {
+    let done = false;
+    for (let attempt = 0; attempt < 3 && !done; attempt++){
+      const {data, sha} = await ghPull();
+      if (data && mergeInto(S, normalize(data))){ persistNow(); if (!isTyping()) render(); }
+      const payload = syncPayload();
+      if (!data || JSON.stringify(normalize(data)) !== JSON.stringify(normalize(payload))){
+        const r = await ghPush(payload, sha);
+        if (r.status === 409 || r.status === 422) continue;   // someone else pushed in between: pull + merge again
+        if (!r.ok) throw new Error(ghErr(r));
+      }
+      done = true;
+    }
+    if (!done) throw new Error('Could not resolve a conflicting backup; try again.');
+    C.lastSyncAt = Date.now(); C.dirty = false; saveCfg(); setSync('ok');
+  } catch(e){
+    setSync('error', e.message || 'Network error.');
+  } finally {
+    syncing = false;
+    if (syncAgain){ syncAgain = false; scheduleSync(1500); }
+  }
+}
+window.addEventListener('online', () => { if (C.dirty) sync(); else updatePill(); });
+window.addEventListener('offline', updatePill);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden'){ persistNow(); if (C.dirty && ghReady() && C.gh.auto) sync(); }
+  else { if (ghReady() && (C.dirty || Date.now() - C.lastSyncAt > 5*60e3)) sync(); else updatePill(); if (ui.date !== today() && !getDay(ui.date) && ui.tab === 'today'){ ui.date = today(); render(); } }
+});
+window.addEventListener('pagehide', persistNow);
+
+/* ---------- actions ---------- */
+const A = {
+  'tab': el => { ui.tab = el.dataset.tab; render(); window.scrollTo(0, 0); },
+  'hide-install': () => { C.hideInstall = true; saveCfg(); render(); },
+  'day-shift': el => { const n = +el.dataset.n, nd = addDays(ui.date, n); if (nd > today()) return; ui.date = nd; render(); },
+  'day-today': () => { ui.date = today(); ui.meal = defaultMeal(); render(); },
+  'day-clear': () => { if (!confirm('Clear everything logged for ' + fmtDate(ui.date) + '?')) return;
+    S.days[ui.date] = Object.assign(blankDay(ui.date), {deleted:true, updatedAt:Date.now()}); changed(); toast('Day cleared'); },
+  'test-food': el => editDay(d => { d.test.food = el.dataset.name; if (!d.test.food) d.test.phase = ''; }),
+  'test-phase': el => editDay(d => { d.test.phase = d.test.phase === el.dataset.v ? '' : el.dataset.v; }),
+  'meal-tab': el => { ui.meal = el.dataset.m; render(); },
+  'item-add': el => addFood(el.dataset.name),
+  'item-add-custom': () => { const v = cap($('#customFood').value.trim()); if (!v) return $('#customFood').focus();
+    if (!quickFoods().some(f => lc(f) === lc(v))){ S.quickFoods.push(v); S.listsUpdatedAt = Date.now(); }
+    addFood(v); },
+  'item-del': el => editDay(d => { d.meals[ui.meal].items.splice(+el.dataset.i, 1); }),
+  'meals-copy': el => { const src = S.days[el.dataset.from];
+    editDay(d => { MEALS.forEach(([k]) => { d.meals[k] = JSON.parse(JSON.stringify(src.meals[k])); }); }); toast('Meals copied, adjust as needed'); },
+  'drink-add': el => addDrink(el.dataset.name),
+  'drink-add-custom': () => { const v = cap($('#customDrink').value.trim()); if (!v) return $('#customDrink').focus();
+    if (!S.quickDrinks.some(f => lc(f) === lc(v))){ S.quickDrinks.push(v); S.listsUpdatedAt = Date.now(); }
+    addDrink(v); },
+  'drink-del': el => editDay(d => { d.drinks.splice(+el.dataset.i, 1); }),
+  'bm-add': el => { const b = +el.dataset.b; editDay(d => { d.stools.push({b, time: ui.date === today() ? nowTime() : ''}); d.noBM = false; }); toast('BM logged: Bristol ' + b); },
+  'bm-del': el => editDay(d => { d.stools.splice(+el.dataset.i, 1); }),
+  'nobm': () => editDay(d => { d.noBM = !d.noBM; }),
+  'sym': el => editDay(d => { const v = +el.dataset.v; d.sym[el.dataset.k] = d.sym[el.dataset.k] === v ? null : v; }),
+  'sym-none': () => editDay(d => { SYMPTOMS.forEach(([k]) => { d.sym[k] = 0; }); }),
+  'ctx': el => editDay(d => { const v = +el.dataset.v; d[el.dataset.k] = d[el.dataset.k] === v ? null : v; }),
+  // tests
+  't-start': el => { const t = S.tests.find(x => x.id === el.dataset.id); t.status = 'progress'; t.start = today(); t.end = '';
+    changed({lists:true}); toast('Started ' + t.name + '. Mark it on Today.'); },
+  't-move': el => { const i = S.tests.findIndex(x => x.id === el.dataset.id), j = i + +el.dataset.n;
+    if (j < 0 || j >= S.tests.length) return; [S.tests[i], S.tests[j]] = [S.tests[j], S.tests[i]]; changed({lists:true}); },
+  't-del': el => { const t = S.tests.find(x => x.id === el.dataset.id); if (!confirm('Remove ' + t.name + ' from the test list?')) return;
+    S.tests = S.tests.filter(x => x !== t); changed({lists:true}); },
+  't-add': () => { const v = cap($('#newTest').value.trim()); if (!v) return $('#newTest').focus();
+    if (S.tests.some(t => lc(t.name) === lc(v))) return toast('Already in the list');
+    S.tests.push({id:uid(), name:v, status:'untested', start:'', end:'', note:''}); changed({lists:true}); },
+  'list-add': el => { const k = el.dataset.kind, inp = $('#add-' + k), v = cap(inp.value.trim()); if (!v) return inp.focus();
+    if (S[k].some(f => lc(f) === lc(v))) return toast('Already in the list');
+    S[k].push(v); changed({lists:true}); },
+  'list-del': el => { const k = el.dataset.kind; S[k].splice(+el.dataset.i, 1); changed({lists:true}); },
+  // history
+  'h-month': el => { const [y, m] = ui.histMonth.split('-').map(Number); const d = new Date(y, m-1 + +el.dataset.n, 1);
+    ui.histMonth = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; render(); },
+  'h-open': el => { ui.date = el.dataset.date; ui.tab = 'today'; render(); window.scrollTo(0, 0); },
+  // export
+  'ex-range': el => { const n = el.dataset.n; ui.exTo = today();
+    ui.exFrom = n === 'all' ? (Object.keys(S.days).filter(k => hasData(S.days[k])).sort()[0] || today()) : addDays(today(), -(+n - 1)); render(); },
+  'md-copy': async () => { const ok = await copyText(buildMarkdown(ui.exFrom, ui.exTo)); toast(ok ? 'Copied. Paste it into your AI chat.' : 'Copy failed. Use Share or Preview.', !ok); },
+  'md-share': async () => { try { await navigator.share({title:'Food diary ' + ui.exFrom + ' to ' + ui.exTo, text:buildMarkdown(ui.exFrom, ui.exTo)}); } catch(e){} },
+  'md-preview': () => { ui.preview = !ui.preview; render(); },
+  'csv': async () => { await saveFile(`reintro-${today()}.csv`, buildCSV(), 'text/csv'); },
+  'json-backup': async () => {
+    const ok = await saveFile(`reintro-backup-${today()}.json`, JSON.stringify(Object.assign(syncPayload(), {exportedAt:new Date().toISOString()}), null, 1), 'application/json');
+    if (ok){ C.lastFileBackupAt = Date.now(); saveCfg(); render(); toast('Backup file created'); } },
+  'import': () => $('#importFile').click(),
+  'import-cancel': () => { ui.pendingImport = null; render(); },
+  'import-merge': () => { mergeInto(S, ui.pendingImport); ui.pendingImport = null; changed(); toast('Backup merged'); },
+  'import-replace': () => { if (!confirm('Replace ALL data on this device with the file? This cannot be undone.')) return;
+    S = ui.pendingImport; ui.pendingImport = null; changed({lists:true}); toast('Data restored from file'); },
+  'gh-sync': () => sync(),
+  'gh-restore': async () => {
+    if (!confirm('Replace ALL data on this device with the GitHub backup? (Use “Back up now” instead to merge.)')) return;
+    try { setSync('syncing'); const {data} = await ghPull();
+      if (!data){ setSync('idle'); return toast('No backup file in the repo yet', true); }
+      S = normalize(data); C.dirty = false; C.lastSyncAt = Date.now(); persistNow(); setSync('ok'); render(); toast('Restored from GitHub ✓');
+    } catch(e){ setSync('error', e.message); }
+  },
+};
+function addFood(name){
+  editDay(d => { const m = d.meals[ui.meal]; m.items.push({name, g: C.lastGrams[lc(name)] ?? null}); if (!m.time && ui.date === today()) m.time = nowTime(); });
+}
+function addDrink(name){
+  editDay(d => { const x = d.drinks.find(z => lc(z.name) === lc(name)); if (x) x.ml = (x.ml || 0) + 250; else d.drinks.push({name, ml:250}); });
+}
+const CH = {
+  'day-set': el => { if (!el.value) return; ui.date = el.value > today() ? today() : el.value; render(); },
+  't-status': el => { const t = S.tests.find(x => x.id === el.dataset.id); t.status = el.value;
+    if (t.status === 'progress' && !t.start) t.start = today();
+    if (['ok','reaction','retest'].includes(t.status) && t.start && !t.end) t.end = today();
+    ui.openTests.add(t.id); changed({lists:true}); },
+  'ex-from': el => { if (el.value){ ui.exFrom = el.value; render(); } },
+  'ex-to': el => { if (el.value){ ui.exTo = el.value; render(); } },
+};
+document.addEventListener('click', e => { if (e.target.matches('.datepick input') && e.target.showPicker){ try { e.target.showPicker(); } catch(_){} } });
+document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el && !el.disabled && A[el.dataset.act]) A[el.dataset.act](el, e); });
+document.addEventListener('change', e => { const el = e.target; if (el.dataset.change && CH[el.dataset.change]) CH[el.dataset.change](el);
+  if (el.dataset.cfg && el.type === 'checkbox'){ setPath(C, el.dataset.cfg, el.checked); saveCfg(); } });
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (el.dataset.bind){
+    let v = el.value; if ('num' in el.dataset) v = v === '' ? null : Math.max(0, Number(v));
+    editDay(d => {
+      setPath(d, el.dataset.bind, v);
+      const m = el.dataset.bind.match(/^meals\.(\w+)\.items\.(\d+)\.g$/);
+      if (m){ const it = d.meals[m[1]].items[+m[2]]; if (it) C.lastGrams[lc(it.name)] = v; }
+    }, {rerender:false});
+  } else if (el.dataset.cfg && el.type !== 'checkbox'){
+    setPath(C, el.dataset.cfg, el.value.trim()); if (ui.sync === 'error') ui.sync = 'idle'; saveCfg(); updatePill();
+    const ok = ghReady(); document.querySelectorAll('[data-act="gh-sync"],[data-act="gh-restore"]').forEach(b => b.disabled = !ok);
+  } else if (el.dataset.tbind){
+    const t = S.tests.find(x => x.id === el.dataset.id); if (t){ t[el.dataset.tbind] = el.value; changed({rerender:false, lists:true}); }
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+  const map = {customFood:'item-add-custom', customDrink:'drink-add-custom', newTest:'t-add'};
+  const act = map[e.target.id] || (e.target.id.startsWith('add-') ? 'list-add' : null);
+  if (!act) return;
+  e.preventDefault();
+  A[act](e.target.nextElementSibling || e.target);
+});
+document.addEventListener('toggle', e => { const el = e.target; if (el.classList && el.classList.contains('test')){ el.open ? ui.openTests.add(el.dataset.id) : ui.openTests.delete(el.dataset.id); } }, true);
+$('#importFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { const data = JSON.parse(await f.text()); if (!data || !data.days) throw new Error('not a Reintro backup');
+    ui.pendingImport = normalize(data); render(); }
+  catch(err){ toast('Could not read file: ' + err.message, true); }
+});
+
+/* ---------- boot ---------- */
+render();
+setInterval(updatePill, 60e3);
+if (ghReady()) sync();
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
