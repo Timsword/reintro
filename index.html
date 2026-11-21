@@ -52,7 +52,8 @@ main{max-width:560px;margin:0 auto;padding:0 16px 24px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chips.scroll{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;margin:0 -14px;padding-left:14px;padding-right:14px;scrollbar-width:none}
 .chips.scroll::-webkit-scrollbar{display:none}
-.chip{min-height:40px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--chip);font-size:15px;white-space:nowrap;flex:0 0 auto}
+.chip{min-height:40px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--chip);font-size:15px;white-space:nowrap;flex:0 0 auto;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .chip.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .chip.add{border-style:dashed;background:transparent}
 .chip .x{margin-left:6px;opacity:.6}
@@ -257,6 +258,7 @@ let C = Object.assign({}, CFG_DEFAULT, lsGet(CFG_KEY) || {});
 C.gh = Object.assign({}, CFG_DEFAULT.gh, C.gh || {});
 C.lastGrams = C.lastGrams || {};
 C.lastMl = C.lastMl || {};
+C.hiddenChips = C.hiddenChips || [];
 
 const ui = { tab:'today', date:today(), meal:defaultMeal(), histMonth:today().slice(0,7),
   exFrom:addDays(today(), -13), exTo:today(), openTests:new Set(), sync:'idle', syncErr:'', pendingImport:null, preview:false,
@@ -354,6 +356,52 @@ function mealChips(d, m){
 }
 function prevMealDay(date, m){
   return Object.keys(S.days).filter(k => k < date && hasData(S.days[k]) && S.days[k].meals[m].items.length).sort().pop() || null;
+}
+function drinkChips(d){
+  const freq = {}, hist = [];
+  Object.keys(S.days).sort().reverse().forEach(k => { const x = S.days[k]; if (!hasData(x)) return;
+    uniqCI(x.drinks.map(z => z.name)).forEach(n => { const key = lc(n); if (!freq[key]){ freq[key] = 0; hist.push(n); } freq[key]++; }); });
+  return uniqCI([...hist, ...S.quickDrinks]).map((n, i) => ({n, i, f: freq[lc(n)] || 0})).sort((a, b) => b.f - a.f || a.i - b.i).map(x => x.n);
+}
+/* Every food name the app knows (any meal, quick list, base, test list): used to reuse an existing name instead of creating a near-duplicate. */
+function knownFoods(){
+  const all = [...S.safeFoods, ...S.quickFoods, ...S.tests.map(t => t.name)];
+  Object.values(S.days).forEach(x => { if (hasData(x)) MEALS.forEach(([m]) => x.meals[m].items.forEach(i => all.push(i.name))); });
+  return uniqCI(all);
+}
+function knownDrinks(){
+  const all = [...S.quickDrinks];
+  Object.values(S.days).forEach(x => { if (hasData(x)) x.drinks.forEach(z => all.push(z.name)); });
+  return uniqCI(all);
+}
+const TOP_CHIPS = 8;
+function chipBox(id, names, act, labelFn, showAll, moreAct, searchOnly=[]){
+  const hid = new Set(C.hiddenChips.map(lc)), inList = new Set(names.map(lc));
+  let rank = 0;
+  const all = [...names, ...searchOnly.filter(n => !inList.has(lc(n)))];   // searchOnly: known foods that only appear when typed
+  const chips = all.map((n, i) => { const h = i >= names.length || hid.has(lc(n)), r = h ? 999 : rank++, vis = !h && (showAll || r < TOP_CHIPS);
+    return `<button class="chip" data-act="${act}" data-name="${esc(n)}" data-rank="${r}" data-hidden="${h ? 1 : 0}"${vis ? '' : ' style="display:none"'}>${labelFn(n)}</button>`; }).join('');
+  const more = rank > TOP_CHIPS ? `<button class="chip add more" data-act="${moreAct}">${showAll ? 'Show fewer' : 'All (' + rank + ')'}</button>` : '';
+  return `<div class="chips" id="${id}">${chips}${more}<span class="nomatch muted small" style="display:none;align-self:center">No match: tap “Add new”.</span></div>`;
+}
+/* Live filter while typing: matches anywhere in the name, also finds hidden suggestions. */
+function filterChips(inputId){
+  const box = $(inputId === 'customFood' ? '#foodChips' : '#drinkChips'), inp = $('#' + inputId), btn = $('#' + inputId + 'Btn');
+  if (!box || !inp) return;
+  const q = lc(inp.value), showAll = inputId === 'customFood' ? ui.allFoods : ui.allDrinks;
+  const known = inputId === 'customFood' ? knownFoods() : knownDrinks();
+  let shown = 0;
+  box.querySelectorAll('.chip[data-name]').forEach(c => { const n = lc(c.dataset.name);
+    const vis = q ? n.includes(q) : c.dataset.hidden !== '1' && (showAll || +c.dataset.rank < TOP_CHIPS);
+    c.style.display = vis ? '' : 'none'; if (vis) shown++; });
+  const more = box.querySelector('.more'); if (more) more.style.display = q ? 'none' : '';
+  box.querySelector('.nomatch').style.display = q && !shown ? '' : 'none';
+  if (btn) btn.textContent = q && !known.some(f => lc(f) === q) ? 'Add new' : 'Add';
+}
+function hideChip(name){
+  if (!confirm(`Hide “${name}” from suggestions?\n\nYou can still find it by typing, and unhide it on the Tests page.`)) return;
+  if (!C.hiddenChips.some(x => lc(x) === lc(name))) C.hiddenChips.push(name);
+  saveCfg(); render();
 }
 const serving = name => C.lastMl[lc(name)] ?? (/espresso/i.test(name) ? 30 : /coffee|caff/i.test(name) ? 150 : 250);
 function dayScore(d){
@@ -462,8 +510,10 @@ function renderToday(){
     <div class="items">${meal.items.map((it, i) => `<div class="item"><span class="nm">${esc(it.name)}</span>
       <span class="gram"><input type="number" inputmode="numeric" min="0" value="${it.g ?? ''}" placeholder="–" data-bind="meals.${m}.items.${i}.g" data-num aria-label="grams of ${esc(it.name)}">g</span>
       <button class="x-btn" data-act="item-del" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>
-    <div class="chips scroll">${mealChips(d, m).map(f => chip('+ ' + esc(f), 'item-add', `data-name="${esc(f)}"`)).join('')}</div>
-    <div class="row" style="margin-top:8px"><input id="customFood" class="field grow" placeholder="Other food…" enterkeyhint="done" autocomplete="off"><button class="btn" data-act="item-add-custom">Add</button></div>
+    <div class="row" style="margin-bottom:8px"><input id="customFood" class="field grow" placeholder="Search or add food…" enterkeyhint="done" autocomplete="off"><button class="btn" id="customFoodBtn" data-act="item-add-custom">Add</button></div>
+    ${chipBox('foodChips', mealChips(d, m), 'item-add', n => '+ ' + esc(n), ui.allFoods, 'all-foods',
+      knownFoods().filter(f => !meal.items.some(i => lc(i.name) === lc(f))))}
+    <div class="hint">Long-press a suggestion to hide it.</div>
   </section>`;
 
   // drinks
@@ -471,8 +521,8 @@ function renderToday(){
     <div class="items">${d.drinks.map((x, i) => `<div class="item"><span class="nm">${esc(x.name)}</span>
       <span class="gram"><input type="number" inputmode="numeric" min="0" step="50" value="${x.ml ?? ''}" placeholder="–" data-bind="drinks.${i}.ml" data-num aria-label="ml of ${esc(x.name)}">ml</span>
       <button class="x-btn" data-act="drink-del" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>
-    <div class="chips scroll">${S.quickDrinks.map(n => chip('+ ' + esc(n) + ' ' + serving(n), 'drink-add', `data-name="${esc(n)}"`)).join('')}</div>
-    <div class="row" style="margin-top:8px"><input id="customDrink" class="field grow" placeholder="Other drink…" enterkeyhint="done" autocomplete="off"><button class="btn" data-act="drink-add-custom">Add</button></div>
+    <div class="row" style="margin-bottom:8px"><input id="customDrink" class="field grow" placeholder="Search or add drink…" enterkeyhint="done" autocomplete="off"><button class="btn" id="customDrinkBtn" data-act="drink-add-custom">Add</button></div>
+    ${chipBox('drinkChips', drinkChips(d), 'drink-add', n => '+ ' + esc(n) + ' ' + serving(n), ui.allDrinks, 'all-drinks', knownDrinks())}
   </section>`;
 
   // stool
@@ -553,7 +603,10 @@ function renderTests(){
   <section class="card"><h2>Extra quick-add foods <small>shown as chips</small></h2>${list(S.quickFoods, 'quickFoods')}
     <div class="row" style="margin-top:10px"><input id="add-quickFoods" class="field grow" placeholder="Add food…" autocomplete="off"><button class="btn" data-act="list-add" data-kind="quickFoods">Add</button></div></section>
   <section class="card"><h2>Quick-add drinks</h2>${list(S.quickDrinks, 'quickDrinks')}
-    <div class="row" style="margin-top:10px"><input id="add-quickDrinks" class="field grow" placeholder="Add drink…" autocomplete="off"><button class="btn" data-act="list-add" data-kind="quickDrinks">Add</button></div></section>`;
+    <div class="row" style="margin-top:10px"><input id="add-quickDrinks" class="field grow" placeholder="Add drink…" autocomplete="off"><button class="btn" data-act="list-add" data-kind="quickDrinks">Add</button></div></section>
+  ${C.hiddenChips.length ? `<section class="card"><h2>Hidden suggestions <small>tap to show again</small></h2>
+    <div class="chips">${C.hiddenChips.map(n => `<button class="chip" data-act="unhide" data-uname="${esc(n)}">${esc(n)}<span class="x">×</span></button>`).join('')}</div>
+    <div class="hint">Hidden on this device only. They still appear when you type their name.</div></section>` : ''}`;
   return h;
 }
 
@@ -823,9 +876,13 @@ const A = {
   'test-phase': el => editDay(d => { d.test.phase = d.test.phase === el.dataset.v ? '' : el.dataset.v; }),
   'meal-tab': el => { ui.meal = el.dataset.m; render(); },
   'item-add': el => addFood(el.dataset.name),
-  'item-add-custom': () => { const v = cap($('#customFood').value.trim()); if (!v) return $('#customFood').focus();
-    if (!quickFoods().some(f => lc(f) === lc(v))){ S.quickFoods.push(v); S.listsUpdatedAt = Date.now(); }
-    addFood(v); },
+  'item-add-custom': () => { const typed = cap($('#customFood').value.trim()); if (!typed) return $('#customFood').focus();
+    const existing = knownFoods().find(f => lc(f) === lc(typed));            // reuse the existing spelling, no duplicates
+    if (!existing){ S.quickFoods.push(typed); S.listsUpdatedAt = Date.now(); }
+    addFood(existing || typed); },
+  'all-foods': () => { ui.allFoods = !ui.allFoods; render(); },
+  'all-drinks': () => { ui.allDrinks = !ui.allDrinks; render(); },
+  'unhide': el => { C.hiddenChips = C.hiddenChips.filter(x => lc(x) !== lc(el.dataset.uname)); saveCfg(); render(); },
   'item-del': el => editDay(d => { d.meals[ui.meal].items.splice(+el.dataset.i, 1); }),
   'meal-repeat': el => { const src = S.days[el.dataset.from].meals[ui.meal];
     editDay(d => { const m = d.meals[ui.meal]; m.items = JSON.parse(JSON.stringify(src.items));
@@ -834,9 +891,10 @@ const A = {
   'more-sym': () => { ui.moreSym = !ui.moreSym; render(); },
   'more-ctx': () => { ui.moreCtx = !ui.moreCtx; render(); },
   'drink-add': el => addDrink(el.dataset.name),
-  'drink-add-custom': () => { const v = cap($('#customDrink').value.trim()); if (!v) return $('#customDrink').focus();
-    if (!S.quickDrinks.some(f => lc(f) === lc(v))){ S.quickDrinks.push(v); S.listsUpdatedAt = Date.now(); }
-    addDrink(v); },
+  'drink-add-custom': () => { const typed = cap($('#customDrink').value.trim()); if (!typed) return $('#customDrink').focus();
+    const existing = knownDrinks().find(f => lc(f) === lc(typed));
+    if (!S.quickDrinks.some(f => lc(f) === lc(typed))){ S.quickDrinks.push(existing || typed); S.listsUpdatedAt = Date.now(); }
+    addDrink(existing || typed); },
   'drink-del': el => editDay(d => { d.drinks.splice(+el.dataset.i, 1); }),
   'bm-add': el => { const b = +el.dataset.b; editDay(d => { d.stools.push({b, time: ui.date === today() ? nowTime() : ''}); d.noBM = false; }); toast('BM logged: Bristol ' + b); },
   'bm-del': el => editDay(d => { d.stools.splice(+el.dataset.i, 1); if (!d.stools.length) d.noBM = true; }),
@@ -914,11 +972,23 @@ const CH = {
   'ex-to': el => { if (el.value){ ui.exTo = el.value; render(); } },
 };
 document.addEventListener('click', e => { if (e.target.matches('.datepick input') && e.target.showPicker){ try { e.target.showPicker(); } catch(_){} } });
-document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el && !el.disabled && A[el.dataset.act]) A[el.dataset.act](el, e); });
+/* Long-press (~0.6 s) on a food/drink suggestion hides it. */
+let lpTimer = null, lpFired = false;
+document.addEventListener('pointerdown', e => {
+  const c = e.target.closest('.chip[data-name]'); if (!c) return;
+  lpFired = false; clearTimeout(lpTimer);
+  lpTimer = setTimeout(() => { lpFired = true; hideChip(c.dataset.name); }, 600);
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach(t => document.addEventListener(t, () => clearTimeout(lpTimer), true));
+document.addEventListener('scroll', () => clearTimeout(lpTimer), true);
+document.addEventListener('contextmenu', e => { if (e.target.closest('.chip[data-name]')) e.preventDefault(); });
+document.addEventListener('click', e => { if (lpFired){ lpFired = false; return; }
+  const el = e.target.closest('[data-act]'); if (el && !el.disabled && A[el.dataset.act]) A[el.dataset.act](el, e); });
 document.addEventListener('change', e => { const el = e.target; if (el.dataset.change && CH[el.dataset.change]) CH[el.dataset.change](el);
   if (el.dataset.cfg && el.type === 'checkbox'){ setPath(C, el.dataset.cfg, el.checked); saveCfg(); } });
 document.addEventListener('input', e => {
   const el = e.target;
+  if (el.id === 'customFood' || el.id === 'customDrink') return filterChips(el.id);
   if (el.dataset.bind){
     let v = el.value; if ('num' in el.dataset) v = v === '' ? null : Math.max(0, Number(v));
     editDay(d => {

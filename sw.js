@@ -1,5 +1,5 @@
 // Offline cache for the app shell. Bump VERSION when you change any file below.
-const VERSION = 'reintro-v2';
+const VERSION = 'reintro-v3';
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
