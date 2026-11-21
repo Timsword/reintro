@@ -191,8 +191,9 @@ const BACKUP_WARN_DAYS = 3;
 
 /* ---------- version: bump APP_VERSION for every release (MAJOR.MINOR.PATCH). It is the single source:
    the offline cache, the update check and the Version card all read it. Add a CHANGELOG line too. ---------- */
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.6.0';
 const CHANGELOG = [
+  ['0.6.0', '“Copy data only” for an existing AI chat, and a “Since last copy” date range.'],
   ['0.5.0', '“Copy for AI” is shorter: context on top, daily data as one CSV block.'],
   ['0.4.1', 'Merge target is now a search field with suggestions; the Export tab is now “Settings”.'],
   ['0.4.0', 'Rename / merge a food everywhere (Tests page), e.g. combine duplicates.'],
@@ -752,11 +753,13 @@ function renderHistory(){
 function renderExport(){
   const n = daysInRange(ui.exFrom, ui.exTo).length;
   let h = banners(true) + `<section class="card"><h2>Copy for AI <small>${n} day${n===1?'':'s'} in range</small></h2>
-    <div class="chips">${[7,14,30].map(x => chip('Last ' + x + ' days', 'ex-range', `data-n="${x}"`)).join('')}${chip('All', 'ex-range', 'data-n="all"')}</div>
+    <div class="chips">${C.lastAiCopyTo ? chip('Since last copy', 'ex-range', 'data-n="since"') : ''}${[7,14,30].map(x => chip('Last ' + x + ' days', 'ex-range', `data-n="${x}"`)).join('')}${chip('All', 'ex-range', 'data-n="all"')}</div>
     <div class="grid2"><div><label class="lab">From</label><input class="field" type="date" value="${ui.exFrom}" data-change="ex-from"></div>
       <div><label class="lab">To</label><input class="field" type="date" value="${ui.exTo}" data-change="ex-to"></div></div>
-    <div class="btns"><button class="btn primary" data-act="md-copy">Copy for AI</button>${navigator.share ? '<button class="btn" data-act="md-share">Share…</button>' : '<button class="btn" data-act="md-preview">Preview</button>'}</div>
-    ${navigator.share ? '<button class="link" data-act="md-preview">' + (ui.preview ? 'Hide preview' : 'Show preview') + '</button>' : ''}
+    <div class="btns"><button class="btn primary" data-act="md-copy" data-kind="full">Copy for AI</button><button class="btn" data-act="md-copy" data-kind="data">Copy data only</button></div>
+    <div class="hint">“Copy for AI” includes the explanation and question, for a new chat. “Copy data only” is just the daily rows, to continue a chat that already has them.${C.lastAiCopyTo ? ` Last copied up to <b>${esc(fmtDate(C.lastAiCopyTo, {day:'numeric', month:'short'}))}</b>.` : ''}</div>
+    <div class="row" style="gap:16px">${navigator.share ? '<button class="link" data-act="md-share" data-kind="full">Share full…</button><button class="link" data-act="md-share" data-kind="data">Share data…</button>' : ''}
+      <button class="link" data-act="md-preview">${ui.preview ? 'Hide preview' : 'Preview'}</button></div>
     ${ui.preview ? `<pre class="preview">${esc(buildMarkdown(ui.exFrom, ui.exTo))}</pre>` : ''}
   </section>`;
 
@@ -874,6 +877,20 @@ function buildMarkdown(from, to){
   }
   L.push('---', '', 'Please analyze this diary: look for patterns between the foods being reintroduced and stool or symptoms (allowing for 24–72 h delays), point out confounders (e.g. several new foods at once), judge whether each food looks tolerated, and suggest concrete next steps (continue, retest, pause, or what to try next and how).');
   return L.join('\n');
+}
+/* Just the daily rows, for a chat that already received a full "Copy for AI". */
+function buildDataOnly(from, to){
+  const days = daysInRange(from, to);
+  if (!days.length) return `Diary update ${from} to ${to}: no days logged in this period.`;
+  const csv = buildDailyCSV(days, firstSeenMap());
+  return [`Diary update ${from} to ${to} (${days.length} day${days.length===1?'':'s'}), same format as before. Empty cell = not recorded.`,
+    '```csv', ...csv.lines, '```'].join('\n');
+}
+/* Remember the last copied day so "Since last copy" can pick up from there. */
+function markAiCopied(){
+  const last = daysInRange(ui.exFrom, ui.exTo).map(d => d.date).pop() || ui.exTo;
+  if (!C.lastAiCopyTo || last > C.lastAiCopyTo) C.lastAiCopyTo = last;
+  saveCfg(); if (ui.tab === 'export') render();
 }
 /* Compact per-day table for the AI export. Optional columns (sleep, stress, …) are left out when empty for the whole period. */
 function buildDailyCSV(days, fs){
@@ -1097,9 +1114,14 @@ const A = {
   'h-open': el => { ui.date = el.dataset.date; ui.tab = 'today'; render(); window.scrollTo(0, 0); },
   // export
   'ex-range': el => { const n = el.dataset.n; ui.exTo = today();
-    ui.exFrom = n === 'all' ? (Object.keys(S.days).filter(k => hasData(S.days[k])).sort()[0] || today()) : addDays(today(), -(+n - 1)); render(); },
-  'md-copy': async () => { const ok = await copyText(buildMarkdown(ui.exFrom, ui.exTo)); toast(ok ? 'Copied. Paste it into your AI chat.' : 'Copy failed. Use Share or Preview.', !ok); },
-  'md-share': async () => { try { await navigator.share({title:'Food diary ' + ui.exFrom + ' to ' + ui.exTo, text:buildMarkdown(ui.exFrom, ui.exTo)}); } catch(e){} },
+    ui.exFrom = n === 'all' ? (Object.keys(S.days).filter(k => hasData(S.days[k])).sort()[0] || today())
+      : n === 'since' ? [addDays(C.lastAiCopyTo, 1), today()].sort()[0] : addDays(today(), -(+n - 1)); render(); },
+  'md-copy': async el => { const text = el.dataset.kind === 'data' ? buildDataOnly(ui.exFrom, ui.exTo) : buildMarkdown(ui.exFrom, ui.exTo);
+    const ok = await copyText(text);
+    if (ok) markAiCopied();
+    toast(ok ? 'Copied. Paste it into your AI chat.' : 'Copy failed. Use Share or Preview.', !ok); },
+  'md-share': async el => { const text = el.dataset.kind === 'data' ? buildDataOnly(ui.exFrom, ui.exTo) : buildMarkdown(ui.exFrom, ui.exTo);
+    try { await navigator.share({title:'Food diary ' + ui.exFrom + ' to ' + ui.exTo, text}); markAiCopied(); } catch(e){} },
   'md-preview': () => { ui.preview = !ui.preview; render(); },
   'csv': async () => { await saveFile(`reintro-${today()}.csv`, buildCSV(), 'text/csv'); },
   'json-backup': async () => {
