@@ -256,9 +256,12 @@ const CFG_DEFAULT = { gh:{repo:'', path:'diary.json', token:'', auto:true}, last
 let C = Object.assign({}, CFG_DEFAULT, lsGet(CFG_KEY) || {});
 C.gh = Object.assign({}, CFG_DEFAULT.gh, C.gh || {});
 C.lastGrams = C.lastGrams || {};
+C.lastMl = C.lastMl || {};
 
 const ui = { tab:'today', date:today(), meal:defaultMeal(), histMonth:today().slice(0,7),
-  exFrom:addDays(today(), -13), exTo:today(), openTests:new Set(), sync:'idle', syncErr:'', pendingImport:null, preview:false };
+  exFrom:addDays(today(), -13), exTo:today(), openTests:new Set(), sync:'idle', syncErr:'', pendingImport:null, preview:false,
+  moreSym:false, moreCtx:false };
+const MAIN_SYM = ['gas', 'cramps'];
 
 function defaultMeal(){ const h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 15 ? 'lunch' : h < 18 ? 'snack' : 'dinner'; }
 
@@ -286,7 +289,7 @@ const hasData = d => !!d && !d.deleted && d.updatedAt > 0;
 const getDay = date => hasData(S.days[date]) ? S.days[date] : null;
 function ensureDay(date){
   let d = S.days[date];
-  if (!d || d.deleted){ d = blankDay(date); S.days[date] = d; }
+  if (!d || d.deleted){ d = blankDay(date); d.noBM = true; S.days[date] = d; }   // new days default to "no BM"
   return d;
 }
 function editDay(fn, opt){ const d = ensureDay(ui.date); fn(d); d.deleted = false; d.updatedAt = Date.now(); changed(opt); }
@@ -309,6 +312,50 @@ function firstSeenMap(){
   return map;
 }
 function newFoodsOn(d, fs){ const safe = new Set(S.safeFoods.map(lc)); return foodsOf(d).filter(f => !safe.has(lc(f)) && fs[lc(f)] === d.date); }
+const isSafe = name => S.safeFoods.some(f => lc(f) === lc(name));
+const testFor = key => S.tests.find(t => lc(t.name) === key);
+const VERDICTS = [['ok','Tolerated'],['reaction','Reaction'],['retest','Retest']];
+/* Every logged food/drink outside the base diet, with the days eaten and what happened in the
+   window from the first day eaten until 2 days after the last (24–72 h delays). */
+function reintroFoods(){
+  const map = {};
+  Object.keys(S.days).sort().forEach(k => { const d = S.days[k]; if (!hasData(d)) return;
+    foodsOf(d).forEach(f => { if (isSafe(f)) return; const key = lc(f);
+      const e = map[key] || (map[key] = {name:f, key, first:k, days:[]}); e.days.push(k); }); });
+  const t = today();
+  return Object.values(map).map(e => {
+    e.last = e.days[e.days.length - 1];
+    e.test = testFor(e.key);
+    e.window = [];
+    const end = addDays(e.last, 2) < t ? addDays(e.last, 2) : t;
+    for (let k = e.first; k <= end && e.window.length < 120; k = addDays(k, 1)) e.window.push(k);
+    let gas = null, cramps = null; const stool = [];
+    e.window.forEach(k => { const d = getDay(k);
+      stool.push(!d ? '—' : d.stools.length ? d.stools.map(s => s.b).join('+') : d.noBM ? 'none' : '—');
+      if (d && d.sym.gas != null) gas = Math.max(gas ?? 0, d.sym.gas);
+      if (d && d.sym.cramps != null) cramps = Math.max(cramps ?? 0, d.sym.cramps); });
+    e.stool = stool; e.gas = gas; e.cramps = cramps;
+    return e;
+  }).sort((a, b) => b.first.localeCompare(a.first) || a.name.localeCompare(b.name));
+}
+function amountOn(d, key){
+  let amt = 0, any = false, unit = 'g';
+  MEALS.forEach(([m]) => d.meals[m].items.forEach(i => { if (lc(i.name) === key){ any = true; amt += Number(i.g) || 0; } }));
+  d.drinks.forEach(x => { if (lc(x.name) === key){ any = true; unit = 'ml'; amt += Number(x.ml) || 0; } });
+  return any ? (amt ? amt + ' ' + unit : '✓') : '';
+}
+function mealChips(d, m){
+  const freq = {}, hist = [];
+  Object.keys(S.days).sort().reverse().forEach(k => { const x = S.days[k]; if (!hasData(x)) return;
+    uniqCI(x.meals[m].items.map(i => i.name)).forEach(n => { const key = lc(n); if (!freq[key]){ freq[key] = 0; hist.push(n); } freq[key]++; }); });
+  const inMeal = new Set(d.meals[m].items.map(i => lc(i.name)));
+  return uniqCI([...hist, ...quickFoods(d)]).map((n, i) => ({n, i, f: freq[lc(n)] || 0}))
+    .sort((a, b) => b.f - a.f || a.i - b.i).map(x => x.n).filter(n => !inMeal.has(lc(n)));
+}
+function prevMealDay(date, m){
+  return Object.keys(S.days).filter(k => k < date && hasData(S.days[k]) && S.days[k].meals[m].items.length).sort().pop() || null;
+}
+const serving = name => C.lastMl[lc(name)] ?? (/espresso/i.test(name) ? 30 : /coffee|caff/i.test(name) ? 150 : 250);
 function dayScore(d){
   const vals = SYMPTOMS.map(([k]) => d.sym[k]).filter(v => v != null);
   d.stools.forEach(s => vals.push(BRISTOL_SCORE[s.b] ?? 0));
@@ -388,40 +435,34 @@ function banners(onExport=false){
 }
 
 function renderToday(){
-  const date = ui.date, d = getDay(date) || blankDay(date), isToday = date === today();
+  const date = ui.date, d = getDay(date) || Object.assign(blankDay(date), {noBM:true}), isToday = date === today();
   const label = isToday ? 'Today' : date === addDays(today(), -1) ? 'Yesterday' : fmtDate(date);
   const sub = isToday || date === addDays(today(), -1) ? fmtDate(date) : new Date(date+'T12:00:00').getFullYear();
-  // test food
-  const testOpts = S.tests.filter(t => t.status !== 'ok' || lc(t.name) === lc(d.test.food));
-  const cur = S.tests.find(t => t.status === 'progress');
   let h = banners() + `
   <div class="datebar">
     <button class="icon-btn" data-act="day-shift" data-n="-1" aria-label="Previous day">‹</button>
     <label class="datepick">${esc(label)}<span class="sub">${esc(sub)}</span><input type="date" value="${date}" data-change="day-set" aria-label="Pick date"></label>
     <button class="icon-btn" data-act="day-shift" data-n="1" aria-label="Next day" ${isToday?'disabled style="opacity:.35"':''}>›</button>
   </div>
-  ${isToday ? '' : '<button class="link" data-act="day-today">← Back to today</button>'}
-
-  <section class="card"><h2>Test food <small>${cur ? 'in progress: ' + esc(cur.name) : ''}</small></h2>
-    <div class="chips">${chip('None', 'test-food', 'data-name=""', !d.test.food)}${testOpts.map(t =>
-      chip(esc(t.name), 'test-food', `data-name="${esc(t.name)}"`, lc(t.name) === lc(d.test.food))).join('')}</div>
-    ${d.test.food ? `<label class="lab">Phase</label><div class="chips">${PHASES.map(([k, l]) => chip(l, 'test-phase', `data-v="${k}"`, d.test.phase === k)).join('')}</div>` : ''}
-    <div class="hint">Day 1 small portion → Day 2 full portion → Day 3+ observe without it.</div>
-  </section>`;
+  ${isToday ? '' : '<button class="link" data-act="day-today">← Back to today</button>'}`;
 
   // meals
-  const m = ui.meal, meal = d.meals[m];
+  const m = ui.meal, meal = d.meals[m], mealLabel = MEALS.find(x => x[0] === m)[1].toLowerCase();
   const counts = MEALS.map(([k, l]) => { const n = d.meals[k].items.length; return `<button class="${k===m?'sel':''}" data-act="meal-tab" data-m="${k}">${l}<span class="n">${n ? n + ' item' + (n>1?'s':'') : '–'}</span></button>`; }).join('');
-  const prev = findPrevMealsDay(date);
-  const empty = MEALS.every(([k]) => !d.meals[k].items.length);
-  h += `<section class="card"><h2>Meals ${empty && prev ? `<button class="link" data-act="meals-copy" data-from="${prev}">Copy ${esc(fmtDate(prev,{weekday:'short'}))}'s meals</button>` : ''}</h2>
+  const prevM = !meal.items.length && prevMealDay(date, m);
+  const nf = newFoodsOn(d, firstSeenMap());
+  h += `<section class="card"><h2>Meals</h2>
     <div class="seg">${counts}</div>
-    <div class="row" style="margin-bottom:10px"><span class="grow muted small">Time</span>
-      <input class="timein" type="time" value="${esc(meal.time)}" data-bind="meals.${m}.time"></div>
+    ${nf.length > 1 ? `<div class="banner warn" style="margin:0 0 10px">⚠ ${nf.length} new foods today: ${esc(nf.join(', '))}. Their effects will be hard to tell apart.</div>`
+      : nf.length ? `<div class="hint" style="margin:0 0 10px">New food today: <b>${esc(nf[0])}</b></div>` : ''}
+    ${m === 'snack' ? '' : `<div class="row" style="margin-bottom:10px"><span class="grow muted small">Time</span>
+      <input class="timein" type="time" value="${esc(meal.time)}" data-bind="meals.${m}.time" aria-label="${mealLabel} time">
+      ${meal.time ? `<button class="x-btn" data-act="meal-time-clear" aria-label="Clear time">×</button>` : ''}</div>`}
+    ${prevM ? `<button class="btn block" style="margin-bottom:10px;text-align:left;font-weight:500" data-act="meal-repeat" data-from="${prevM}">↻ Same as last ${mealLabel} <span class="muted small">(${esc(fmtDate(prevM, {weekday:'short', day:'numeric'}))})</span><br><span class="small">${esc(itemsStr(S.days[prevM].meals[m].items))}</span></button>` : ''}
     <div class="items">${meal.items.map((it, i) => `<div class="item"><span class="nm">${esc(it.name)}</span>
       <span class="gram"><input type="number" inputmode="numeric" min="0" value="${it.g ?? ''}" placeholder="–" data-bind="meals.${m}.items.${i}.g" data-num aria-label="grams of ${esc(it.name)}">g</span>
       <button class="x-btn" data-act="item-del" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>
-    <div class="chips scroll">${quickFoods(d).map(f => chip('+ ' + esc(f), 'item-add', `data-name="${esc(f)}"`)).join('')}</div>
+    <div class="chips scroll">${mealChips(d, m).map(f => chip('+ ' + esc(f), 'item-add', `data-name="${esc(f)}"`)).join('')}</div>
     <div class="row" style="margin-top:8px"><input id="customFood" class="field grow" placeholder="Other food…" enterkeyhint="done" autocomplete="off"><button class="btn" data-act="item-add-custom">Add</button></div>
   </section>`;
 
@@ -430,7 +471,7 @@ function renderToday(){
     <div class="items">${d.drinks.map((x, i) => `<div class="item"><span class="nm">${esc(x.name)}</span>
       <span class="gram"><input type="number" inputmode="numeric" min="0" step="50" value="${x.ml ?? ''}" placeholder="–" data-bind="drinks.${i}.ml" data-num aria-label="ml of ${esc(x.name)}">ml</span>
       <button class="x-btn" data-act="drink-del" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>
-    <div class="chips scroll">${S.quickDrinks.map(n => chip('+ ' + esc(n) + ' 250', 'drink-add', `data-name="${esc(n)}"`)).join('')}</div>
+    <div class="chips scroll">${S.quickDrinks.map(n => chip('+ ' + esc(n) + ' ' + serving(n), 'drink-add', `data-name="${esc(n)}"`)).join('')}</div>
     <div class="row" style="margin-top:8px"><input id="customDrink" class="field grow" placeholder="Other drink…" enterkeyhint="done" autocomplete="off"><button class="btn" data-act="drink-add-custom">Add</button></div>
   </section>`;
 
@@ -444,55 +485,66 @@ function renderToday(){
     ${d.stools.length ? '' : `<div class="chips" style="margin-top:10px">${chip('No bowel movement today', 'nobm', '', d.noBM)}</div>`}
   </section>`;
 
-  // symptoms
+  // symptoms: gas + cramps always, the rest behind a button (auto-open if any of them has a value)
+  const hiddenHas = SYMPTOMS.some(([k]) => !MAIN_SYM.includes(k) && d.sym[k] != null) || !!d.otherSym.trim();
+  const allSym = ui.moreSym || hiddenHas;
+  const symList = allSym ? [...MAIN_SYM.map(k => SYMPTOMS.find(s => s[0] === k)), ...SYMPTOMS.filter(([k]) => !MAIN_SYM.includes(k))]
+    : MAIN_SYM.map(k => SYMPTOMS.find(s => s[0] === k));
   h += `<section class="card"><h2>Symptoms <small>0 none · 5 severe</small></h2>
-    ${SYMPTOMS.map(([k, l]) => `<div class="rate"><div class="lbl"><span>${l}</span></div>${scale('sym', k, d.sym[k])}</div>`).join('')}
-    <button class="btn block" style="margin-top:10px" data-act="sym-none">No symptoms (set all to 0)</button>
-    <label class="lab">Other symptoms &amp; when they started</label>
-    <textarea class="field" rows="2" data-bind="otherSym" placeholder="e.g. urgency at 15:00, ~2 h after lunch">${esc(d.otherSym)}</textarea>
+    ${symList.map(([k, l]) => `<div class="rate"><div class="lbl"><span>${l}</span></div>${scale('sym', k, d.sym[k])}</div>`).join('')}
+    <button class="btn block" style="margin-top:10px" data-act="sym-none" data-all="${allSym ? 1 : 0}">None today (set ${allSym ? 'all' : 'gas &amp; cramps'} to 0)</button>
+    ${allSym ? `<label class="lab">Other symptoms &amp; when they started</label>
+    <textarea class="field" rows="2" data-bind="otherSym" placeholder="e.g. urgency at 15:00, ~2 h after lunch">${esc(d.otherSym)}</textarea>` : ''}
+    ${hiddenHas ? '' : `<button class="link" data-act="more-sym">${allSym ? 'Show fewer symptoms' : 'More symptoms (bloating, pain, nausea…)'}</button>`}
   </section>`;
 
-  // context
-  h += `<section class="card"><h2>Context</h2>
+  // context: collapsed unless opened or already filled in
+  const ctxHas = d.sleep != null || d.stress != null || !!d.meds.trim() || !!d.exercise.trim();
+  if (ui.moreCtx || ctxHas) h += `<section class="card"><h2>Context ${ctxHas ? '' : '<button class="link" data-act="more-ctx">Hide</button>'}</h2>
     <div class="rate"><div class="lbl"><span>Sleep quality</span><span class="muted small">0 bad · 5 great</span></div>${scale('ctx', 'sleep', d.sleep, false)}</div>
     <div class="rate"><div class="lbl"><span>Stress</span><span class="muted small">0 none · 5 high</span></div>${scale('ctx', 'stress', d.stress)}</div>
     <label class="lab">Medications / supplements</label><input class="field" data-bind="meds" value="${esc(d.meds)}" placeholder="none">
     <label class="lab">Exercise</label><input class="field" data-bind="exercise" value="${esc(d.exercise)}" placeholder="e.g. 30 min walk">
-  </section>
-  <section class="card"><h2>Notes</h2>
+  </section>`;
+  else h += `<button class="btn block" style="margin:12px 0" data-act="more-ctx">＋ Sleep, stress, medications, exercise</button>`;
+  h += `<section class="card"><h2>Notes</h2>
     <textarea class="field" rows="3" data-bind="notes" placeholder="Anything else…">${esc(d.notes)}</textarea>
   </section>
   ${getDay(date) ? '<button class="btn danger block" data-act="day-clear">Clear this day</button>' : ''}`;
   return h;
 }
-function findPrevMealsDay(date){
-  return Object.keys(S.days).filter(k => k < date && hasData(S.days[k]) && MEALS.some(([m]) => S.days[k].meals[m].items.length)).sort().pop() || null;
-}
 
+const plannedTests = () => { const eaten = new Set(reintroFoods().map(e => e.key)); return S.tests.filter(t => !eaten.has(lc(t.name)) && !isSafe(t.name)); };
 function renderTests(){
-  const cur = S.tests.filter(t => t.status === 'progress');
-  const next = S.tests.find(t => t.status === 'untested');
-  const streak = bristolStreak();
-  let h = `<section class="card"><h2>Current test</h2>`;
-  if (cur.length) h += cur.map(t => { const n = t.start ? Math.round((new Date(today()+'T12:00') - new Date(t.start+'T12:00'))/864e5) + 1 : null;
-      return `<div style="margin-bottom:8px"><b>${esc(t.name)}</b> <span class="badge st-progress">${n ? 'day ' + n : 'in progress'}</span>${t.note ? `<div class="muted small" style="margin-top:4px">${esc(t.note)}</div>` : ''}</div>`; }).join('');
-  else h += `<div class="muted">No test in progress.</div>${next ? `<button class="btn primary block" style="margin-top:10px" data-act="t-start" data-id="${next.id}">Start testing ${esc(next.name)} today</button>` : ''}`;
-  h += `<div class="streak">Normal stool streak (Bristol 3–4): <b>${streak} day${streak===1?'':'s'}</b></div></section>`;
-
-  h += `<section class="card"><h2>Foods to test <small>${S.tests.filter(t => t.status === 'ok').length}/${S.tests.length} tolerated</small></h2>
-    ${S.tests.map((t, i) => `<details class="test" data-id="${t.id}" ${ui.openTests.has(t.id) ? 'open' : ''}>
-      <summary><span class="tname">${esc(t.name)}</span><span class="badge st-${t.status}">${STATUS_LABEL[t.status]}</span></summary>
+  const foods = reintroFoods(), planned = plannedTests(), streak = bristolStreak();
+  let h = `<section class="card"><h2>Being reintroduced <small>found automatically</small></h2>
+    <div class="hint" style="margin:-4px 0 6px">Every food you log that isn't in your base list. Window = first day eaten until 2 days after the last.</div>
+    <div class="streak" style="margin:0 0 4px">Normal stool streak (Bristol 3–4): <b>${streak} day${streak===1?'':'s'}</b></div>
+    ${foods.length ? '' : '<div class="muted" style="margin-top:8px">Nothing yet. Foods outside your base list appear here as soon as you log them.</div>'}
+    ${foods.map(e => { const st = e.test && VERDICTS.some(v => v[0] === e.test.status) ? e.test.status : '';
+      return `<details class="test" data-id="${esc(e.key)}" ${ui.openTests.has(e.key) ? 'open' : ''}>
+      <summary><span class="tname">${esc(e.name)}<span class="muted small" style="display:block">since ${esc(fmtDate(e.first, {day:'numeric', month:'short'}))} · ${e.days.length} day${e.days.length===1?'':'s'} · stool ${esc(e.stool.join(' · '))}${e.gas != null ? ' · gas ≤' + e.gas : ''}</span></span>
+        ${st ? `<span class="badge st-${st}">${STATUS_LABEL[st]}</span>` : ''}</summary>
       <div class="tbody">
-        <label class="lab">Status</label>
-        <select class="field" data-change="t-status" data-id="${t.id}">${STATUSES.map(([k, l]) => `<option value="${k}" ${t.status===k?'selected':''}>${l}</option>`).join('')}</select>
-        <div class="grid2"><div><label class="lab">Start</label><input class="field" type="date" value="${esc(t.start)}" data-tbind="start" data-id="${t.id}"></div>
-          <div><label class="lab">End</label><input class="field" type="date" value="${esc(t.end)}" data-tbind="end" data-id="${t.id}"></div></div>
-        <label class="lab">Result note</label><textarea class="field" rows="2" data-tbind="note" data-id="${t.id}">${esc(t.note)}</textarea>
-        <div class="row" style="margin-top:10px"><button class="icon-btn" data-act="t-move" data-id="${t.id}" data-n="-1" ${i===0?'disabled':''} aria-label="Move up">↑</button>
-          <button class="icon-btn" data-act="t-move" data-id="${t.id}" data-n="1" ${i===S.tests.length-1?'disabled':''} aria-label="Move down">↓</button>
-          <span class="grow"></span><button class="btn danger" data-act="t-del" data-id="${t.id}">Remove</button></div>
-      </div></details>`).join('')}
-    <div class="row" style="margin-top:10px"><input id="newTest" class="field grow" placeholder="Add a food to test…" autocomplete="off"><button class="btn" data-act="t-add">Add</button></div>
+        <div class="hlist small">${e.window.map(k => { const d = getDay(k), a = d ? amountOn(d, e.key) : '';
+          return `<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><span style="width:84px">${esc(fmtDate(k, {weekday:'short', day:'numeric'}))}</span>
+            <span class="grow">${a ? '<b>ate ' + esc(a) + '</b>' : '<span class="muted">—</span>'}</span>
+            <span style="width:92px">${!d ? '<span class="muted">not logged</span>' : d.stools.length ? 'Bristol ' + d.stools.map(s => s.b).join(',') : d.noBM ? 'no BM' : '<span class="muted">stool —</span>'}</span>
+            <span style="width:64px;text-align:right">${d && d.sym.gas != null ? 'gas ' + d.sym.gas : ''}${d && d.sym.cramps ? '<br>cr ' + d.sym.cramps : ''}</span></div>`; }).join('')}</div>
+        <label class="lab">Your verdict</label>
+        <div class="chips">${VERDICTS.map(([k, l]) => chip(l, 'verdict', `data-key="${esc(e.key)}" data-v="${k}"`, st === k)).join('')}</div>
+        <label class="lab">Note</label><textarea class="field" rows="2" data-vnote="${esc(e.key)}" placeholder="optional">${esc(e.test ? e.test.note : '')}</textarea>
+        ${st === 'ok' ? `<button class="btn block" style="margin-top:10px" data-act="to-base" data-key="${esc(e.key)}">Add ${esc(e.name)} to base foods</button>` : ''}
+      </div></details>`; }).join('')}
+  </section>`;
+
+  h += `<section class="card"><h2>Planned, not tried yet <small>${planned.length}</small></h2>
+    ${planned.map((t, i) => `<div class="item" style="margin-bottom:6px"><span class="nm">${esc(t.name)}</span>
+      <button class="x-btn" data-act="t-move" data-id="${t.id}" data-n="-1" ${i===0?'disabled':''} aria-label="Move up">↑</button>
+      <button class="x-btn" data-act="t-move" data-id="${t.id}" data-n="1" ${i===planned.length-1?'disabled':''} aria-label="Move down">↓</button>
+      <button class="x-btn" data-act="t-del" data-id="${t.id}" aria-label="Remove">×</button></div>`).join('')}
+    <div class="row" style="margin-top:10px"><input id="newTest" class="field grow" placeholder="Add a food to try later…" autocomplete="off"><button class="btn" data-act="t-add">Add</button></div>
+    <div class="hint">When you log one of these in a meal, it moves up automatically.</div>
   </section>`;
 
   const list = (arr, kind) => `<div class="chips">${arr.map((f, i) => `<button class="chip" data-act="list-del" data-kind="${kind}" data-i="${i}">${esc(f)}<span class="x">×</span></button>`).join('')}</div>`;
@@ -511,25 +563,26 @@ function renderHistory(){
   const title = first.toLocaleDateString(undefined, {month:'long', year:'numeric'});
   let cells = ['Mo','Tu','We','Th','Fr','Sa','Su'].map(x => `<div class="dow">${x}</div>`).join('');
   for (let i = 0; i < lead; i++) cells += '<button class="empty" disabled></button>';
-  const t = today(), days = [];
+  const t = today(), days = [], fs = firstSeenMap();
   for (let n = 1; n <= dim; n++){
     const k = `${y}-${String(mo).padStart(2,'0')}-${String(n).padStart(2,'0')}`, d = getDay(k);
     let cls = d ? 'lv-' + level(dayScore(d)) : '';
     if (k === t) cls += ' today';
     if (d) days.push(d);
-    cells += `<button class="${cls}" data-act="h-open" data-date="${k}" ${k > t ? 'disabled style="opacity:.4"' : ''}>${n}${d && d.test.food && d.test.phase !== 'obs' ? '<span class="dot"></span>' : ''}</button>`;
+    cells += `<button class="${cls}" data-act="h-open" data-date="${k}" ${k > t ? 'disabled style="opacity:.4"' : ''}>${n}${d && newFoodsOn(d, fs).length ? '<span class="dot"></span>' : ''}</button>`;
   }
   let h = `<section class="card"><h2><button class="icon-btn" data-act="h-month" data-n="-1" aria-label="Previous month">‹</button><span>${esc(title)}</span>
       <button class="icon-btn" data-act="h-month" data-n="1" aria-label="Next month">›</button></h2>
     <div class="cal">${cells}</div>
-    <div class="legend"><span><i style="background:var(--ok)"></i>OK</span><span><i style="background:var(--warn)"></i>Mild</span><span><i style="background:var(--bad)"></i>Marked</span><span><i style="background:var(--accent-soft)"></i>Logged, no ratings</span><span>• test food eaten</span></div>
+    <div class="legend"><span><i style="background:var(--ok)"></i>OK</span><span><i style="background:var(--warn)"></i>Mild</span><span><i style="background:var(--bad)"></i>Marked</span><span><i style="background:var(--accent-soft)"></i>Logged, no ratings</span><span>• new food first eaten</span></div>
     <div class="hint">Colour = worst of symptom ratings and Bristol score (3–4 normal).</div></section>`;
   days.reverse();
   h += `<section class="card"><h2>Days logged <small>${days.length}</small></h2>`;
   if (!days.length) h += '<div class="muted">Nothing logged this month.</div>';
   h += `<div class="hlist">${days.map(d => {
     const tags = [];
-    if (d.test.food) tags.push(`<span class="badge st-progress">${esc(d.test.food)}${d.test.phase ? ' · ' + esc(PHASES.find(p => p[0]===d.test.phase)?.[1] || '') : ''}</span>`);
+    const nf = newFoodsOn(d, fs);
+    if (nf.length) tags.push(`<span class="badge st-progress">New: ${esc(nf.join(', '))}</span>`);
     if (d.stools.length) tags.push(`<span class="badge">BM ${d.stools.length} · B ${d.stools.map(s => s.b).join(',')}</span>`);
     else if (d.noBM) tags.push('<span class="badge">No BM</span>');
     const sy = SYMPTOMS.filter(([k]) => (d.sym[k] || 0) >= 2).map(([k, l]) => `${l} ${d.sym[k]}`);
@@ -602,19 +655,27 @@ function buildMarkdown(from, to){
   L.push('# Food reintroduction diary', '');
   L.push(`Period: ${from} to ${to} (${days.length} logged day${days.length===1?'':'s'}). Generated ${today()}.`, '');
   L.push('Scales: symptoms 0–5 (0 = none, 5 = severe). Bristol stool scale 1–7 (3–4 = normal, 5–7 = loose, 1–2 = hard). Sleep 0–5 (5 = great), stress 0–5 (5 = high). "—" = not recorded.', '');
-  L.push('Protocol: one new food at a time. Day 1 small portion, Day 2 full portion, Day 3+ observe without the test food.', '');
+  L.push('Method: elimination diet, then reintroducing foods. Any food or drink (except water) not in the base diet counts as being reintroduced; it is detected automatically from the meals logged, there is no separate test marker.', '');
   L.push('## Base (safe) diet', '', S.safeFoods.join(', ') || '—', '');
-  L.push('## Reintroduction tests', '', '| # | Food | Status | Start | End | Result / note |', '|---|---|---|---|---|---|');
-  S.tests.forEach((t, i) => L.push(`| ${i+1} | ${cell(t.name)} | ${STATUS_LABEL[t.status]} | ${cell(t.start)} | ${cell(t.end)} | ${cell(t.note)} |`));
-  L.push('');
+  const foods = reintroFoods().filter(e => e.days.some(k => k >= from && k <= to) || e.window.some(k => k >= from && k <= to));
+  L.push('## Foods being reintroduced', '', 'Window = first day eaten until 2 days after the last day eaten. Stool = Bristol scores per day in that window ("none" = no BM, "—" = not recorded).', '');
+  if (foods.length){
+    L.push('| Food | First eaten | Days eaten | Amounts | Stool in window | Max gas | Max cramps | Verdict / note |', '|---|---|---|---|---|---|---|---|');
+    foods.slice().reverse().forEach(e => { const st = e.test && VERDICTS.some(v => v[0] === e.test.status) ? STATUS_LABEL[e.test.status] : 'no verdict yet';
+      const amts = e.days.map(k => amountOn(S.days[k], e.key)).join(', ');
+      L.push(`| ${cell(e.name)} | ${e.first} | ${e.days.length} | ${cell(amts)} | ${cell(e.stool.join(' · '))} | ${e.gas ?? '—'} | ${e.cramps ?? '—'} | ${cell(st + (e.test && e.test.note ? ': ' + e.test.note : ''))} |`); });
+  } else L.push('_None in this period._');
+  const planned = plannedTests();
+  L.push('', '## Planned, not tried yet', '', planned.map(t => t.name).join(', ') || '—', '');
   if (!days.length){ L.push('_No days logged in this period._', ''); }
   else {
-    L.push('## Overview', '', '| Date | Test food (phase) | BMs | Bristol | Symptoms ≥ 2 | Sleep | Stress |', '|---|---|---|---|---|---|---|');
-    days.forEach(d => L.push(`| ${fmtDate(d.date,{weekday:'short'})} ${d.date} | ${cell(testStr(d))} | ${bmStr(d)} | ${bristolStr(d)} | ${cell(symStr(d, 2))} | ${d.sleep ?? '—'} | ${d.stress ?? '—'} |`));
+    L.push('## Overview', '', '| Date | New foods (first time) | BMs | Bristol | Gas | Cramps | Other symptoms ≥ 2 |', '|---|---|---|---|---|---|---|');
+    days.forEach(d => { const other = SYMPTOMS.filter(([k]) => !MAIN_SYM.includes(k) && d.sym[k] >= 2).map(([k, l]) => `${l.toLowerCase()} ${d.sym[k]}`).join(', ');
+      L.push(`| ${fmtDate(d.date,{weekday:'short'})} ${d.date} | ${cell(newFoodsOn(d, fs).join(', '))} | ${bmStr(d)} | ${bristolStr(d)} | ${d.sym.gas ?? '—'} | ${d.sym.cramps ?? '—'} | ${cell(other)} |`); });
     L.push('', '## Daily details', '');
     days.forEach(d => {
       L.push(`### ${fmtDate(d.date, {weekday:'long', day:'numeric', month:'short', year:'numeric'})} (${d.date})`);
-      L.push(`- **Test food:** ${testStr(d)}`);
+      if (d.test.food) L.push(`- **Marked test food:** ${testStr(d)}`);
       MEALS.forEach(([k, l]) => { const ml = d.meals[k]; if (ml.items.length) L.push(`- **${l}${ml.time ? ' ' + ml.time : ''}:** ${itemsStr(ml.items)}`); });
       if (MEALS.every(([k]) => !d.meals[k].items.length)) L.push('- **Meals:** not recorded');
       L.push(`- **Drinks:** ${drinksStr(d) || 'not recorded'}`);
@@ -630,14 +691,15 @@ function buildMarkdown(from, to){
       L.push('');
     });
   }
-  L.push('---', '', 'Please analyze this diary: look for patterns between foods/test phases and stool or symptoms (allowing for 24–72 h delays), point out confounders, judge whether each tested food looks tolerated, and suggest concrete next steps (continue, retest, pause, or what to test next and how).');
+  L.push('---', '', 'Please analyze this diary: look for patterns between the foods being reintroduced and stool or symptoms (allowing for 24–72 h delays), point out confounders (e.g. several new foods at once), judge whether each food looks tolerated, and suggest concrete next steps (continue, retest, pause, or what to try next and how).');
   return L.join('\n');
 }
 function buildCSV(){
-  const head = ['date','test_food','test_phase', ...MEALS.map(([k]) => k), 'drinks','bm_count','bristol', ...SYMPTOMS.map(([k]) => k),
+  const head = ['date','new_foods', ...MEALS.map(([k]) => k), 'drinks','bm_count','bristol', ...SYMPTOMS.map(([k]) => k),
     'other_symptoms','sleep','stress','medications','exercise','notes'];
   const q = v => { const s = String(v ?? ''); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  const rows = daysInRange('0000-00-00', '9999-12-31').map(d => [d.date, d.test.food, d.test.phase ? PHASE_LONG[d.test.phase] : '',
+  const fs = firstSeenMap();
+  const rows = daysInRange('0000-00-00', '9999-12-31').map(d => [d.date, newFoodsOn(d, fs).join('; '),
     ...MEALS.map(([k]) => (d.meals[k].time ? d.meals[k].time + ' ' : '') + itemsStr(d.meals[k].items)),
     drinksStr(d), d.stools.length || (d.noBM ? 0 : ''), d.stools.map(s => s.b).join(' '),
     ...SYMPTOMS.map(([k]) => d.sym[k] ?? ''), d.otherSym, d.sleep ?? '', d.stress ?? '', d.meds, d.exercise, d.notes]);
@@ -765,24 +827,31 @@ const A = {
     if (!quickFoods().some(f => lc(f) === lc(v))){ S.quickFoods.push(v); S.listsUpdatedAt = Date.now(); }
     addFood(v); },
   'item-del': el => editDay(d => { d.meals[ui.meal].items.splice(+el.dataset.i, 1); }),
-  'meals-copy': el => { const src = S.days[el.dataset.from];
-    editDay(d => { MEALS.forEach(([k]) => { d.meals[k] = JSON.parse(JSON.stringify(src.meals[k])); }); }); toast('Meals copied, adjust as needed'); },
+  'meal-repeat': el => { const src = S.days[el.dataset.from].meals[ui.meal];
+    editDay(d => { const m = d.meals[ui.meal]; m.items = JSON.parse(JSON.stringify(src.items));
+      if (!m.time && ui.date === today() && ui.meal !== 'snack') m.time = nowTime(); }); toast('Added, adjust as needed'); },
+  'meal-time-clear': () => editDay(d => { d.meals[ui.meal].time = ''; }),
+  'more-sym': () => { ui.moreSym = !ui.moreSym; render(); },
+  'more-ctx': () => { ui.moreCtx = !ui.moreCtx; render(); },
   'drink-add': el => addDrink(el.dataset.name),
   'drink-add-custom': () => { const v = cap($('#customDrink').value.trim()); if (!v) return $('#customDrink').focus();
     if (!S.quickDrinks.some(f => lc(f) === lc(v))){ S.quickDrinks.push(v); S.listsUpdatedAt = Date.now(); }
     addDrink(v); },
   'drink-del': el => editDay(d => { d.drinks.splice(+el.dataset.i, 1); }),
   'bm-add': el => { const b = +el.dataset.b; editDay(d => { d.stools.push({b, time: ui.date === today() ? nowTime() : ''}); d.noBM = false; }); toast('BM logged: Bristol ' + b); },
-  'bm-del': el => editDay(d => { d.stools.splice(+el.dataset.i, 1); }),
+  'bm-del': el => editDay(d => { d.stools.splice(+el.dataset.i, 1); if (!d.stools.length) d.noBM = true; }),
   'nobm': () => editDay(d => { d.noBM = !d.noBM; }),
   'sym': el => editDay(d => { const v = +el.dataset.v; d.sym[el.dataset.k] = d.sym[el.dataset.k] === v ? null : v; }),
-  'sym-none': () => editDay(d => { SYMPTOMS.forEach(([k]) => { d.sym[k] = 0; }); }),
+  'sym-none': el => editDay(d => { SYMPTOMS.forEach(([k]) => { if (el.dataset.all === '1' || MAIN_SYM.includes(k)) d.sym[k] = 0; }); }),
   'ctx': el => editDay(d => { const v = +el.dataset.v; d[el.dataset.k] = d[el.dataset.k] === v ? null : v; }),
   // tests
-  't-start': el => { const t = S.tests.find(x => x.id === el.dataset.id); t.status = 'progress'; t.start = today(); t.end = '';
-    changed({lists:true}); toast('Started ' + t.name + '. Mark it on Today.'); },
-  't-move': el => { const i = S.tests.findIndex(x => x.id === el.dataset.id), j = i + +el.dataset.n;
-    if (j < 0 || j >= S.tests.length) return; [S.tests[i], S.tests[j]] = [S.tests[j], S.tests[i]]; changed({lists:true}); },
+  'verdict': el => { const t = ensureTest(el.dataset.key); t.status = t.status === el.dataset.v ? 'untested' : el.dataset.v;
+    ui.openTests.add(el.dataset.key); changed({lists:true}); },
+  'to-base': el => { const t = ensureTest(el.dataset.key); t.status = 'ok';
+    if (!isSafe(t.name)) S.safeFoods.push(t.name); changed({lists:true}); toast(t.name + ' added to base foods'); },
+  't-move': el => { const p = plannedTests(), i = p.findIndex(x => x.id === el.dataset.id), j = i + +el.dataset.n;   // swap with the neighbouring *planned* food
+    if (i < 0 || j < 0 || j >= p.length) return;
+    const a = S.tests.indexOf(p[i]), b = S.tests.indexOf(p[j]); [S.tests[a], S.tests[b]] = [S.tests[b], S.tests[a]]; changed({lists:true}); },
   't-del': el => { const t = S.tests.find(x => x.id === el.dataset.id); if (!confirm('Remove ' + t.name + ' from the test list?')) return;
     S.tests = S.tests.filter(x => x !== t); changed({lists:true}); },
   't-add': () => { const v = cap($('#newTest').value.trim()); if (!v) return $('#newTest').focus();
@@ -821,10 +890,19 @@ const A = {
   },
 };
 function addFood(name){
-  editDay(d => { const m = d.meals[ui.meal]; m.items.push({name, g: C.lastGrams[lc(name)] ?? null}); if (!m.time && ui.date === today()) m.time = nowTime(); });
+  editDay(d => { const m = d.meals[ui.meal]; m.items.push({name, g: C.lastGrams[lc(name)] ?? null});
+    if (!m.time && ui.date === today() && ui.meal !== 'snack') m.time = nowTime(); });
 }
 function addDrink(name){
-  editDay(d => { const x = d.drinks.find(z => lc(z.name) === lc(name)); if (x) x.ml = (x.ml || 0) + 250; else d.drinks.push({name, ml:250}); });
+  const s = serving(name);
+  editDay(d => { const x = d.drinks.find(z => lc(z.name) === lc(name)); if (x) x.ml = (x.ml || 0) + s; else d.drinks.push({name, ml:s}); });
+}
+/* Verdicts live in the existing tests list (old app versions keep it intact when syncing). */
+function ensureTest(key){
+  let t = testFor(key);
+  if (!t){ const e = reintroFoods().find(x => x.key === key);
+    t = {id:uid(), name: e ? e.name : cap(key), status:'untested', start: e ? e.first : '', end:'', note:''}; S.tests.push(t); }
+  return t;
 }
 const CH = {
   'day-set': el => { if (!el.value) return; ui.date = el.value > today() ? today() : el.value; render(); },
@@ -847,12 +925,16 @@ document.addEventListener('input', e => {
       setPath(d, el.dataset.bind, v);
       const m = el.dataset.bind.match(/^meals\.(\w+)\.items\.(\d+)\.g$/);
       if (m){ const it = d.meals[m[1]].items[+m[2]]; if (it) C.lastGrams[lc(it.name)] = v; }
+      const dm = el.dataset.bind.match(/^drinks\.(\d+)\.ml$/);   // an edited amount becomes that drink's serving size
+      if (dm && v){ const x = d.drinks[+dm[1]]; if (x) C.lastMl[lc(x.name)] = v; }
     }, {rerender:false});
   } else if (el.dataset.cfg && el.type !== 'checkbox'){
     setPath(C, el.dataset.cfg, el.value.trim()); if (ui.sync === 'error') ui.sync = 'idle'; saveCfg(); updatePill();
     const ok = ghReady(); document.querySelectorAll('[data-act="gh-sync"],[data-act="gh-restore"]').forEach(b => b.disabled = !ok);
   } else if (el.dataset.tbind){
     const t = S.tests.find(x => x.id === el.dataset.id); if (t){ t[el.dataset.tbind] = el.value; changed({rerender:false, lists:true}); }
+  } else if (el.dataset.vnote){
+    const t = ensureTest(el.dataset.vnote); t.note = el.value; changed({rerender:false, lists:true});
   }
 });
 document.addEventListener('keydown', e => {
