@@ -191,8 +191,9 @@ const BACKUP_WARN_DAYS = 3;
 
 /* ---------- version: bump APP_VERSION for every release (MAJOR.MINOR.PATCH). It is the single source:
    the offline cache, the update check and the Version card all read it. Add a CHANGELOG line too. ---------- */
-const APP_VERSION = '0.3.1';
+const APP_VERSION = '0.4.0';
 const CHANGELOG = [
+  ['0.4.0', 'Rename / merge a food everywhere (Tests page), e.g. combine duplicates.'],
   ['0.3.1', 'Version card with one-tap updates; updates now arrive on the next open.'],
   ['0.3.0', 'Search-as-you-type for foods and drinks, top 8 suggestions, long-press to hide.'],
   ['0.2.0', 'Automatic reintroduction tracking, “Same as last meal”, compact symptoms, “no BM” default, drink serving sizes.'],
@@ -274,7 +275,7 @@ C.hiddenChips = C.hiddenChips || [];
 
 const ui = { tab:'today', date:today(), meal:defaultMeal(), histMonth:today().slice(0,7),
   exFrom:addDays(today(), -13), exTo:today(), openTests:new Set(), sync:'idle', syncErr:'', pendingImport:null, preview:false,
-  moreSym:false, moreCtx:false, upd:{state:'idle'} };
+  moreSym:false, moreCtx:false, upd:{state:'idle'}, rnFrom:'' };
 const MAIN_SYM = ['gas', 'cramps'];
 
 function defaultMeal(){ const h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 15 ? 'lunch' : h < 18 ? 'snack' : 'dinner'; }
@@ -385,6 +386,59 @@ function knownDrinks(){
   const all = [...S.quickDrinks];
   Object.values(S.days).forEach(x => { if (hasData(x)) x.drinks.forEach(z => all.push(z.name)); });
   return uniqCI(all);
+}
+/* ---------- rename / merge ---------- */
+const allNames = () => uniqCI([...knownFoods(), ...knownDrinks()]).sort((a, b) => a.localeCompare(b));
+function foodUsage(name){
+  const key = lc(name); let days = 0, entries = 0;
+  Object.values(S.days).forEach(d => { if (!hasData(d)) return; let n = 0;
+    MEALS.forEach(([m]) => d.meals[m].items.forEach(i => { if (lc(i.name) === key) n++; }));
+    d.drinks.forEach(x => { if (lc(x.name) === key) n++; });
+    if (n){ days++; entries += n; } });
+  return {days, entries};
+}
+/* Renames `from` to `to` everywhere: every day's meals and drinks, all lists, verdicts and device settings.
+   If `to` already exists in the same meal (merge), the two entries become one and their amounts are added. */
+function renameFood(from, to){
+  const fk = lc(from), tk = lc(to), now = Date.now(), caseOnly = fk === tk;
+  const add = (a, b) => (a == null && b == null) ? null : (Number(a) || 0) + (Number(b) || 0);
+  const fixList = (arr, amt) => {
+    if (!arr.some(it => lc(it.name) === fk)) return null;
+    if (caseOnly) return arr.map(it => lc(it.name) === fk ? Object.assign({}, it, {name:to}) : it);
+    const out = []; let target = arr.find(it => lc(it.name) === tk) || null;
+    arr.forEach(it => {
+      if (lc(it.name) !== fk){ out.push(it); return; }
+      if (target){ target[amt] = add(target[amt], it[amt]); return; }      // merge into the existing entry
+      target = Object.assign({}, it, {name:to}); out.push(target);
+    });
+    return out;
+  };
+  let days = 0;
+  Object.values(S.days).forEach(d => { if (!hasData(d)) return; let hit = false;
+    MEALS.forEach(([m]) => { const r = fixList(d.meals[m].items, 'g'); if (r){ d.meals[m].items = r; hit = true; } });
+    const r = fixList(d.drinks, 'ml'); if (r){ d.drinks = r; hit = true; }
+    if (hit){ d.updatedAt = now; days++; } });
+  const ren = arr => uniqCI(arr.map(n => lc(n) === fk ? to : n));
+  S.safeFoods = ren(S.safeFoods); S.quickFoods = ren(S.quickFoods); S.quickDrinks = ren(S.quickDrinks);
+  const src = S.tests.find(t => lc(t.name) === fk), tgt = !caseOnly && S.tests.find(t => lc(t.name) === tk);
+  if (src && tgt){
+    if (tgt.status === 'untested' && src.status !== 'untested'){ tgt.status = src.status; tgt.start = tgt.start || src.start; tgt.end = tgt.end || src.end; }
+    if (src.note) tgt.note = tgt.note ? tgt.note + ' / ' + src.note : src.note;
+    S.tests = S.tests.filter(t => t !== src);
+  } else if (src) src.name = to;
+  ['lastGrams', 'lastMl'].forEach(k => { if (C[k][fk] != null){ if (C[k][tk] == null) C[k][tk] = C[k][fk]; if (!caseOnly) delete C[k][fk]; } });
+  C.hiddenChips = C.hiddenChips.filter(n => lc(n) !== fk);
+  if (ui.openTests.has(fk)){ ui.openTests.delete(fk); ui.openTests.add(tk); }
+  changed({lists:true});
+  return days;
+}
+function updateRenameHint(){
+  const inp = $('#rnTo'), hint = $('#rnHint'), btn = $('[data-act="rn-apply"]'); if (!inp || !hint) return;
+  const to = inp.value.trim(), ex = to && allNames().find(n => lc(n) === lc(to));
+  if (!to){ hint.textContent = ''; btn.textContent = 'Apply'; return; }
+  if (ex && lc(ex) === lc(ui.rnFrom)){ hint.textContent = 'Same food. Change the spelling to rename it.'; btn.textContent = 'Rename'; return; }
+  hint.textContent = ex ? `“${ex}” already exists: all “${ui.rnFrom}” entries will be merged into it.` : `New name. Every “${ui.rnFrom}” entry will be renamed.`;
+  btn.textContent = ex ? `Merge into “${ex}”` : `Rename to “${cap(to)}”`;
 }
 const TOP_CHIPS = 8;
 function chipBox(id, names, act, labelFn, showAll, moreAct, searchOnly=[]){
@@ -601,7 +655,21 @@ function renderTests(){
         <div class="chips">${VERDICTS.map(([k, l]) => chip(l, 'verdict', `data-key="${esc(e.key)}" data-v="${k}"`, st === k)).join('')}</div>
         <label class="lab">Note</label><textarea class="field" rows="2" data-vnote="${esc(e.key)}" placeholder="optional">${esc(e.test ? e.test.note : '')}</textarea>
         ${st === 'ok' ? `<button class="btn block" style="margin-top:10px" data-act="to-base" data-key="${esc(e.key)}">Add ${esc(e.name)} to base foods</button>` : ''}
+        <button class="link" data-act="rn-start" data-food="${esc(e.name)}">Rename / merge “${esc(e.name)}”…</button>
       </div></details>`; }).join('')}
+  </section>`;
+
+  const names = allNames(), u = ui.rnFrom ? foodUsage(ui.rnFrom) : null;
+  h += `<section class="card" id="renameCard"><h2>Rename / merge a food</h2>
+    <div class="hint" style="margin:-4px 0 6px">Fix a spelling everywhere, or combine duplicates (e.g. “Oregano spice” into “Oregano”). Changes every past day.</div>
+    <label class="lab">Food</label>
+    <select class="field" data-change="rn-from"><option value="">Choose a food…</option>${names.map(n => `<option ${lc(n) === lc(ui.rnFrom) ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+    ${ui.rnFrom ? `<div class="hint">Logged ${u.entries} time${u.entries===1?'':'s'} on ${u.days} day${u.days===1?'':'s'}.</div>
+    <label class="lab">New name, or an existing food to merge into</label>
+    <input class="field" id="rnTo" list="rnList" autocomplete="off" autocapitalize="sentences" placeholder="Type a name…">
+    <datalist id="rnList">${names.filter(n => lc(n) !== lc(ui.rnFrom)).map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+    <div class="hint" id="rnHint"></div>
+    <div class="btns"><button class="btn primary" data-act="rn-apply">Apply</button><button class="btn" data-act="rn-cancel">Cancel</button></div>` : ''}
   </section>`;
 
   h += `<section class="card"><h2>Planned, not tried yet <small>${planned.length}</small></h2>
@@ -937,6 +1005,17 @@ const A = {
     const existing = knownFoods().find(f => lc(f) === lc(typed));            // reuse the existing spelling, no duplicates
     if (!existing){ S.quickFoods.push(typed); S.listsUpdatedAt = Date.now(); }
     addFood(existing || typed); },
+  'rn-start': el => { ui.rnFrom = el.dataset.food; render();
+    const c = $('#renameCard'); if (c){ c.scrollIntoView({behavior:'smooth', block:'start'}); setTimeout(() => $('#rnTo') && $('#rnTo').focus(), 350); } },
+  'rn-cancel': () => { ui.rnFrom = ''; render(); },
+  'rn-apply': () => {
+    const from = ui.rnFrom, typed = ($('#rnTo').value || '').trim(); if (!typed) return $('#rnTo').focus();
+    const ex = allNames().find(n => lc(n) === lc(typed)), to = (ex && lc(ex) !== lc(from)) ? ex : cap(typed);
+    if (to === from) return toast('That is already its name');
+    const merge = lc(to) !== lc(from) && !!ex, u = foodUsage(from);
+    if (!confirm(`${merge ? 'Merge' : 'Rename'} “${from}” ${merge ? 'into' : 'to'} “${to}”?\n\nThis changes ${u.entries} entr${u.entries===1?'y':'ies'} on ${u.days} day${u.days===1?'':'s'}. Your backup keeps the old version in its history.`)) return;
+    ui.rnFrom = ''; const n = renameFood(from, to);
+    toast(`${merge ? 'Merged' : 'Renamed'} on ${n} day${n===1?'':'s'} ✓`); },
   'upd-check': () => checkUpdate(false),
   'upd-apply': () => applyUpdate(),
   'upd-reload': () => { persistNow(); location.reload(); },
@@ -1028,6 +1107,7 @@ const CH = {
     if (t.status === 'progress' && !t.start) t.start = today();
     if (['ok','reaction','retest'].includes(t.status) && t.start && !t.end) t.end = today();
     ui.openTests.add(t.id); changed({lists:true}); },
+  'rn-from': el => { ui.rnFrom = el.value; render(); const c = $('#renameCard'); if (c) c.scrollIntoView({block:'start'}); },
   'ex-from': el => { if (el.value){ ui.exFrom = el.value; render(); } },
   'ex-to': el => { if (el.value){ ui.exTo = el.value; render(); } },
 };
@@ -1049,6 +1129,7 @@ document.addEventListener('change', e => { const el = e.target; if (el.dataset.c
 document.addEventListener('input', e => {
   const el = e.target;
   if (el.id === 'customFood' || el.id === 'customDrink') return filterChips(el.id);
+  if (el.id === 'rnTo') return updateRenameHint();
   if (el.dataset.bind){
     let v = el.value; if ('num' in el.dataset) v = v === '' ? null : Math.max(0, Number(v));
     editDay(d => {
