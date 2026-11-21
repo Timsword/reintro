@@ -189,6 +189,18 @@ const BRISTOL_CLASS = b => (b===3||b===4) ? 'b-ok' : (b===7||b===1) ? 'b-bad' : 
 const BRISTOL_SCORE = {1:4,2:2,3:0,4:0,5:2,6:4,7:5};
 const BACKUP_WARN_DAYS = 3;
 
+/* ---------- version: bump APP_VERSION for every release (MAJOR.MINOR.PATCH). It is the single source:
+   the offline cache, the update check and the Version card all read it. Add a CHANGELOG line too. ---------- */
+const APP_VERSION = '0.3.1';
+const CHANGELOG = [
+  ['0.3.1', 'Version card with one-tap updates; updates now arrive on the next open.'],
+  ['0.3.0', 'Search-as-you-type for foods and drinks, top 8 suggestions, long-press to hide.'],
+  ['0.2.0', 'Automatic reintroduction tracking, “Same as last meal”, compact symptoms, “no BM” default, drink serving sizes.'],
+  ['0.1.0', 'First version.'],
+];
+const cmpVer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++){ if ((x[i]||0) !== (y[i]||0)) return (x[i]||0) > (y[i]||0) ? 1 : -1; } return 0; };
+
 /* ---------- utils ---------- */
 const $ = (s, r=document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -262,7 +274,7 @@ C.hiddenChips = C.hiddenChips || [];
 
 const ui = { tab:'today', date:today(), meal:defaultMeal(), histMonth:today().slice(0,7),
   exFrom:addDays(today(), -13), exTo:today(), openTests:new Set(), sync:'idle', syncErr:'', pendingImport:null, preview:false,
-  moreSym:false, moreCtx:false };
+  moreSym:false, moreCtx:false, upd:{state:'idle'} };
 const MAIN_SYM = ['gas', 'cramps'];
 
 function defaultMeal(){ const h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 15 ? 'lunch' : h < 18 ? 'snack' : 'dinner'; }
@@ -472,6 +484,10 @@ function banners(onExport=false){
   if (isIOS && !standalone && !C.hideInstall)
     h += `<div class="banner info"><span>Install: tap <b>Share → Add to Home Screen</b>, then only log from the icon. Safari tabs keep separate data.</span><button class="btn" data-act="hide-install">OK</button></div>`;
   if (onExport) return h;
+  if (ui.upd.state === 'available')
+    h += `<div class="banner info"><span>Version <b>${esc(ui.upd.latest)}</b> is available (you have ${APP_VERSION}).</span><button class="btn primary" data-act="upd-apply">Update</button></div>`;
+  else if (ui.upd.state === 'ready')
+    h += `<div class="banner info"><span>A new version is ready.</span><button class="btn primary" data-act="upd-reload">Reload</button></div>`;
   if (ui.sync === 'error')
     h +=`<div class="banner warn"><span>Automatic backup failed: ${esc(ui.syncErr)}</span><button class="btn" data-act="tab" data-tab="export">Fix</button></div>`;
   else if (!ghReady()){
@@ -686,7 +702,47 @@ function renderExport(){
   <section class="card"><h2>How your data is stored</h2><div class="small muted">
     Everything is saved instantly on this device (browser storage). Deleting the home-screen icon or clearing Safari website data erases it,
     so keep automatic GitHub backup on and save a JSON file now and then. The CSV export includes the CSV columns only; use JSON for restoring.</div></section>`;
+  h += renderVersionCard();
   return h;
+}
+
+function renderVersionCard(){
+  const u = ui.upd, offline = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
+  const latest = u.state === 'available' ? `<b>${esc(u.latest)}</b> available`
+    : u.state === 'current' ? 'up to date ✓' : u.state === 'checking' ? 'checking…'
+    : u.state === 'updating' ? 'updating…' : u.state === 'offline' ? 'couldn’t check (offline?)' : u.state === 'ready' ? 'new version ready' : '—';
+  const btn = u.state === 'available' ? `<button class="btn primary block" data-act="upd-apply">Update to ${esc(u.latest)}</button>`
+    : u.state === 'ready' ? '<button class="btn primary block" data-act="upd-reload">Reload to finish updating</button>'
+    : `<button class="btn block" data-act="upd-check" ${u.state === 'checking' || u.state === 'updating' ? 'disabled' : ''}>Check for updates</button>`;
+  return `<section class="card"><h2>Version <small>${offline ? 'works offline ✓' : 'offline mode not active yet'}</small></h2>
+    <div class="grid2" style="margin-bottom:10px"><div><div class="muted small">Installed</div><div style="font-size:20px;font-weight:650">${APP_VERSION}</div></div>
+      <div><div class="muted small">Latest</div><div style="font-size:15px;margin-top:4px">${latest}</div></div></div>
+    ${btn}
+    <details style="margin-top:10px"><summary class="small muted">What’s new</summary>
+      <ul class="small" style="padding-left:18px;margin:8px 0">${CHANGELOG.map(([v, t]) => `<li style="margin:4px 0"><b>${v}</b> · ${esc(t)}</li>`).join('')}</ul></details>
+    <div class="hint">Updating only replaces the app. Your diary data stays on this device and in your backup.</div></section>`;
+}
+
+/* ---------- updates ---------- */
+/* Reads APP_VERSION from the live index.html (bypassing every cache) and compares it with the running one. */
+async function checkUpdate(quiet=false){
+  if (!/^https?:$/.test(location.protocol) || ui.upd.state === 'updating' || ui.upd.state === 'ready') return;
+  if (!quiet){ ui.upd = {state:'checking'}; if (ui.tab === 'export') render(); }
+  try {
+    const html = await (await fetch('./index.html?check=' + Date.now(), {cache:'no-store'})).text();
+    const m = html.match(/const APP_VERSION = '([\d.]+)'/);
+    if (!m) throw new Error('no version');
+    ui.upd = {state: cmpVer(m[1], APP_VERSION) > 0 ? 'available' : 'current', latest: m[1], at: Date.now()};
+  } catch(e){ ui.upd = {state: quiet ? 'idle' : 'offline'}; }
+  if (!isTyping()) render();
+}
+/* Drop the saved app copy and reload: the page comes fresh from the network and installs the new offline copy. */
+async function applyUpdate(){
+  ui.upd = {state:'updating', latest: ui.upd.latest}; render();
+  persistNow(); saveCfg();
+  try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.unregister())); } catch(e){}
+  try { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); } catch(e){}
+  location.reload();
 }
 
 /* ---------- export builders ---------- */
@@ -860,7 +916,8 @@ window.addEventListener('online', () => { if (C.dirty) sync(); else updatePill()
 window.addEventListener('offline', updatePill);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden'){ persistNow(); if (C.dirty && ghReady() && C.gh.auto) sync(); }
-  else { if (ghReady() && (C.dirty || Date.now() - C.lastSyncAt > 5*60e3)) sync(); else updatePill(); if (ui.date !== today() && !getDay(ui.date) && ui.tab === 'today'){ ui.date = today(); render(); } }
+  else { if (!ui.upd.at || Date.now() - ui.upd.at > 30*60e3) checkUpdate(true);
+    if (ghReady() && (C.dirty || Date.now() - C.lastSyncAt > 5*60e3)) sync(); else updatePill(); if (ui.date !== today() && !getDay(ui.date) && ui.tab === 'today'){ ui.date = today(); render(); } }
 });
 window.addEventListener('pagehide', persistNow);
 
@@ -880,6 +937,9 @@ const A = {
     const existing = knownFoods().find(f => lc(f) === lc(typed));            // reuse the existing spelling, no duplicates
     if (!existing){ S.quickFoods.push(typed); S.listsUpdatedAt = Date.now(); }
     addFood(existing || typed); },
+  'upd-check': () => checkUpdate(false),
+  'upd-apply': () => applyUpdate(),
+  'upd-reload': () => { persistNow(); location.reload(); },
   'all-foods': () => { ui.allFoods = !ui.allFoods; render(); },
   'all-drinks': () => { ui.allDrinks = !ui.allDrinks; render(); },
   'unhide': el => { C.hiddenChips = C.hiddenChips.filter(x => lc(x) !== lc(el.dataset.uname)); saveCfg(); render(); },
@@ -1027,7 +1087,14 @@ $('#importFile').addEventListener('change', async e => {
 render();
 setInterval(updatePill, 60e3);
 if (ghReady()) sync();
-if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+  const hadController = !!navigator.serviceWorker.controller;
+  // A new offline copy took over while this (older) page is open: offer a reload.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController && ui.upd.state !== 'updating'){ ui.upd = {state:'ready'}; if (!isTyping()) render(); } });
+  navigator.serviceWorker.register('sw.js?v=' + APP_VERSION).catch(() => {});
+  checkUpdate(true);
+}
 </script>
 </body>
 </html>
