@@ -161,7 +161,7 @@ a{color:var(--accent)}
   <button class="tab" data-act="tab" data-tab="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Today</button>
   <button class="tab" data-act="tab" data-tab="tests"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7 15h10"/></svg>Tests</button>
   <button class="tab" data-act="tab" data-tab="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>History</button>
-  <button class="tab" data-act="tab" data-tab="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Export</button>
+  <button class="tab" data-act="tab" data-tab="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
 </div></nav>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <input type="file" id="importFile" accept="application/json,.json" hidden>
@@ -191,8 +191,9 @@ const BACKUP_WARN_DAYS = 3;
 
 /* ---------- version: bump APP_VERSION for every release (MAJOR.MINOR.PATCH). It is the single source:
    the offline cache, the update check and the Version card all read it. Add a CHANGELOG line too. ---------- */
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.4.1';
 const CHANGELOG = [
+  ['0.4.1', 'Merge target is now a search field with suggestions; the Export tab is now “Settings”.'],
   ['0.4.0', 'Rename / merge a food everywhere (Tests page), e.g. combine duplicates.'],
   ['0.3.1', 'Version card with one-tap updates; updates now arrive on the next open.'],
   ['0.3.0', 'Search-as-you-type for foods and drinks, top 8 suggestions, long-press to hide.'],
@@ -432,7 +433,23 @@ function renameFood(from, to){
   changed({lists:true});
   return days;
 }
+/* Merge-target picker: candidates are every other known name; similar ones (sharing a word) show before typing. */
+const rnCandidates = () => allNames().filter(n => lc(n) !== lc(ui.rnFrom))
+  .sort((a, b) => (similarName(b, ui.rnFrom) ? 1 : 0) - (similarName(a, ui.rnFrom) ? 1 : 0) || a.localeCompare(b));
+function similarName(a, b){
+  const wa = lc(a).split(/\s+/).filter(w => w.length >= 3), wb = lc(b).split(/\s+/).filter(w => w.length >= 3);
+  return wa.some(w => wb.some(v => v.includes(w) || w.includes(v)));
+}
+function filterRename(){
+  const inp = $('#rnTo'), box = $('#rnChips'); if (!inp || !box) return;
+  const q = lc(inp.value); let shown = 0;
+  box.querySelectorAll('.chip[data-target]').forEach(c => { const n = lc(c.dataset.target);
+    const vis = shown < 12 && (q ? n.includes(q) : c.dataset.similar === '1');
+    c.style.display = vis ? '' : 'none'; c.classList.toggle('sel', !!q && n === q); if (vis) shown++; });
+  box.querySelector('.nomatch').style.display = q && !shown ? '' : 'none';
+}
 function updateRenameHint(){
+  filterRename();
   const inp = $('#rnTo'), hint = $('#rnHint'), btn = $('[data-act="rn-apply"]'); if (!inp || !hint) return;
   const to = inp.value.trim(), ex = to && allNames().find(n => lc(n) === lc(to));
   if (!to){ hint.textContent = ''; btn.textContent = 'Apply'; return; }
@@ -666,8 +683,10 @@ function renderTests(){
     <select class="field" data-change="rn-from"><option value="">Choose a food…</option>${names.map(n => `<option ${lc(n) === lc(ui.rnFrom) ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
     ${ui.rnFrom ? `<div class="hint">Logged ${u.entries} time${u.entries===1?'':'s'} on ${u.days} day${u.days===1?'':'s'}.</div>
     <label class="lab">New name, or an existing food to merge into</label>
-    <input class="field" id="rnTo" list="rnList" autocomplete="off" autocapitalize="sentences" placeholder="Type a name…">
-    <datalist id="rnList">${names.filter(n => lc(n) !== lc(ui.rnFrom)).map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+    <input class="field" id="rnTo" autocomplete="off" autocapitalize="sentences" placeholder="Search or type a new name…">
+    <div class="chips" id="rnChips" style="margin-top:8px">${rnCandidates().map((n, i) =>
+      `<button class="chip" data-act="rn-pick" data-target="${esc(n)}" data-similar="${similarName(n, ui.rnFrom) ? 1 : 0}"${similarName(n, ui.rnFrom) ? '' : ' style="display:none"'}>${esc(n)}</button>`).join('')}
+      <span class="nomatch muted small" style="display:none;align-self:center">No match: it will be a new name.</span></div>
     <div class="hint" id="rnHint"></div>
     <div class="btns"><button class="btn primary" data-act="rn-apply">Apply</button><button class="btn" data-act="rn-cancel">Cancel</button></div>` : ''}
   </section>`;
@@ -1008,6 +1027,7 @@ const A = {
   'rn-start': el => { ui.rnFrom = el.dataset.food; render();
     const c = $('#renameCard'); if (c){ c.scrollIntoView({behavior:'smooth', block:'start'}); setTimeout(() => $('#rnTo') && $('#rnTo').focus(), 350); } },
   'rn-cancel': () => { ui.rnFrom = ''; render(); },
+  'rn-pick': el => { $('#rnTo').value = el.dataset.target; updateRenameHint(); },
   'rn-apply': () => {
     const from = ui.rnFrom, typed = ($('#rnTo').value || '').trim(); if (!typed) return $('#rnTo').focus();
     const ex = allNames().find(n => lc(n) === lc(typed)), to = (ex && lc(ex) !== lc(from)) ? ex : cap(typed);
