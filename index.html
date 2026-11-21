@@ -191,8 +191,9 @@ const BACKUP_WARN_DAYS = 3;
 
 /* ---------- version: bump APP_VERSION for every release (MAJOR.MINOR.PATCH). It is the single source:
    the offline cache, the update check and the Version card all read it. Add a CHANGELOG line too. ---------- */
-const APP_VERSION = '0.4.1';
+const APP_VERSION = '0.5.0';
 const CHANGELOG = [
+  ['0.5.0', '“Copy for AI” is shorter: context on top, daily data as one CSV block.'],
   ['0.4.1', 'Merge target is now a search field with suggestions; the Export tab is now “Settings”.'],
   ['0.4.0', 'Rename / merge a food everywhere (Tests page), e.g. combine duplicates.'],
   ['0.3.1', 'Version card with one-tap updates; updates now arrive on the next open.'],
@@ -850,7 +851,7 @@ function buildMarkdown(from, to){
   const days = daysInRange(from, to), fs = firstSeenMap(), L = [];
   L.push('# Food reintroduction diary', '');
   L.push(`Period: ${from} to ${to} (${days.length} logged day${days.length===1?'':'s'}). Generated ${today()}.`, '');
-  L.push('Scales: symptoms 0–5 (0 = none, 5 = severe). Bristol stool scale 1–7 (3–4 = normal, 5–7 = loose, 1–2 = hard). Sleep 0–5 (5 = great), stress 0–5 (5 = high). "—" = not recorded.', '');
+  L.push('Scales: symptoms 0–5 (0 = none, 5 = severe). Bristol stool scale 1–7 (3–4 = normal, 5–7 = loose, 1–2 = hard). Sleep 0–5 (5 = great), stress 0–5 (5 = high).', '');
   L.push('Method: elimination diet, then reintroducing foods. Any food or drink (except water) not in the base diet counts as being reintroduced; it is detected automatically from the meals logged, there is no separate test marker.', '');
   L.push('## Base (safe) diet', '', S.safeFoods.join(', ') || '—', '');
   const foods = reintroFoods().filter(e => e.days.some(k => k >= from && k <= to) || e.window.some(k => k >= from && k <= to));
@@ -865,30 +866,42 @@ function buildMarkdown(from, to){
   L.push('', '## Planned, not tried yet', '', planned.map(t => t.name).join(', ') || '—', '');
   if (!days.length){ L.push('_No days logged in this period._', ''); }
   else {
-    L.push('## Overview', '', '| Date | New foods (first time) | BMs | Bristol | Gas | Cramps | Other symptoms ≥ 2 |', '|---|---|---|---|---|---|---|');
-    days.forEach(d => { const other = SYMPTOMS.filter(([k]) => !MAIN_SYM.includes(k) && d.sym[k] >= 2).map(([k, l]) => `${l.toLowerCase()} ${d.sym[k]}`).join(', ');
-      L.push(`| ${fmtDate(d.date,{weekday:'short'})} ${d.date} | ${cell(newFoodsOn(d, fs).join(', '))} | ${bmStr(d)} | ${bristolStr(d)} | ${d.sym.gas ?? '—'} | ${d.sym.cramps ?? '—'} | ${cell(other)} |`); });
-    L.push('', '## Daily details', '');
-    days.forEach(d => {
-      L.push(`### ${fmtDate(d.date, {weekday:'long', day:'numeric', month:'short', year:'numeric'})} (${d.date})`);
-      if (d.test.food) L.push(`- **Marked test food:** ${testStr(d)}`);
-      MEALS.forEach(([k, l]) => { const ml = d.meals[k]; if (ml.items.length) L.push(`- **${l}${ml.time ? ' ' + ml.time : ''}:** ${itemsStr(ml.items)}`); });
-      if (MEALS.every(([k]) => !d.meals[k].items.length)) L.push('- **Meals:** not recorded');
-      L.push(`- **Drinks:** ${drinksStr(d) || 'not recorded'}`);
-      L.push(`- **Stool:** ${d.stools.length ? d.stools.length + ' BM — ' + d.stools.map(s => 'Bristol ' + s.b + (s.time ? ' at ' + s.time : '')).join('; ') : d.noBM ? 'no bowel movement' : 'not recorded'}`);
-      L.push(`- **Symptoms:** ${symStr(d, 1)}`);
-      if (d.otherSym.trim()) L.push(`- **Other symptoms:** ${d.otherSym.trim().replace(/\n+/g, '; ')}`);
-      if (d.sleep != null || d.stress != null) L.push(`- **Sleep / stress:** ${d.sleep ?? '—'}/5 · ${d.stress ?? '—'}/5`);
-      if (d.meds.trim()) L.push(`- **Medications:** ${d.meds.trim()}`);
-      if (d.exercise.trim()) L.push(`- **Exercise:** ${d.exercise.trim()}`);
-      const nf = newFoodsOn(d, fs);
-      if (nf.length) L.push(`- **First time logged (not in base diet):** ${nf.join(', ')}${nf.length > 1 ? ' ⚠ more than one new item on the same day' : ''}`);
-      if (d.notes.trim()) L.push(`- **Notes:** ${d.notes.trim().replace(/\n+/g, '; ')}`);
-      L.push('');
-    });
+    const csv = buildDailyCSV(days, fs);
+    L.push('## Daily log (CSV, one row per logged day)', '');
+    L.push('Columns: ' + csv.legend.join('; ') + '.');
+    L.push('An empty cell means not recorded. Items within a cell are separated by "; ". Times are 24 h.', '');
+    L.push('```csv', ...csv.lines, '```', '');
   }
   L.push('---', '', 'Please analyze this diary: look for patterns between the foods being reintroduced and stool or symptoms (allowing for 24–72 h delays), point out confounders (e.g. several new foods at once), judge whether each food looks tolerated, and suggest concrete next steps (continue, retest, pause, or what to try next and how).');
   return L.join('\n');
+}
+/* Compact per-day table for the AI export. Optional columns (sleep, stress, …) are left out when empty for the whole period. */
+function buildDailyCSV(days, fs){
+  const q = v => { const s = String(v ?? '').replace(/```/g, "'''").replace(/\s*\n\s*/g, '; ').trim();
+    return /[",]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const meal = (d, k) => { const m = d.meals[k]; if (!m.items.length) return '';
+    return (m.time && k !== 'snack' ? m.time + ' ' : '') + m.items.filter(i => i.name).map(i => i.name + (i.g ? ' ' + i.g + 'g' : '')).join('; '); };
+  const otherSym = d => [...SYMPTOMS.filter(([k]) => !MAIN_SYM.includes(k) && d.sym[k] > 0).map(([k, l]) => `${l.toLowerCase()} ${d.sym[k]}`),
+    d.otherSym.trim()].filter(Boolean).join('; ');
+  const cols = [
+    ['date', 'YYYY-MM-DD', d => d.date, true],
+    ['day', 'weekday', d => fmtDate(d.date, {weekday:'short'}), true],
+    ['new_foods', 'foods/drinks outside the base diet eaten for the first time that day', d => newFoodsOn(d, fs).join('; '), true],
+    ...MEALS.map(([k, l]) => [k, `${l.toLowerCase()} items with grams${k !== 'snack' ? ', prefixed by time' : ''}`, d => meal(d, k), true]),
+    ['drinks', 'drink and ml', d => d.drinks.map(x => x.name + (x.ml ? ' ' + x.ml + 'ml' : '')).join('; '), true],
+    ['bm_count', 'bowel movements (0 = none that day)', d => d.stools.length ? d.stools.length : d.noBM ? 0 : '', true],
+    ['bristol', 'Bristol score of each BM, with time if known', d => d.stools.map(s => s.b + (s.time ? ' (' + s.time + ')' : '')).join('; '), true],
+    ['gas', '0–5', d => d.sym.gas ?? '', true],
+    ['cramps', '0–5', d => d.sym.cramps ?? '', true],
+    ['other_symptoms', 'other symptoms with 0–5 rating, plus free text', d => otherSym(d), false],
+    ['sleep', '0–5, 5 = great', d => d.sleep ?? '', false],
+    ['stress', '0–5, 5 = high', d => d.stress ?? '', false],
+    ['medications', 'free text', d => d.meds.trim(), false],
+    ['exercise', 'free text', d => d.exercise.trim(), false],
+    ['notes', 'free text', d => d.notes.trim(), true],
+  ].filter(([, , get, always]) => always || days.some(d => String(get(d)) !== ''));
+  return { legend: cols.map(([n, desc]) => `${n} = ${desc}`),
+    lines: [cols.map(c => c[0]).join(','), ...days.map(d => cols.map(([, , get]) => q(get(d))).join(','))] };
 }
 function buildCSV(){
   const head = ['date','new_foods', ...MEALS.map(([k]) => k), 'drinks','bm_count','bristol', ...SYMPTOMS.map(([k]) => k),
